@@ -3,7 +3,9 @@ languageCode = 'en-us'
 defaultContentLanguage = 'en'
 title = 'DevOps & Cloud Blog'
 theme = 'PaperMod'
-paginate = 12
+
+[pagination]
+  pagerSize = 12
 
 # Enable taxonomies
 [taxonomies]
