@@ -1,0 +1,5 @@
+{{- /* Custom JS for live search */ -}}
+{{ $search := resources.Get "js/search.js" }}
+{{ if $search }}
+<script src="{{ $search.RelPermalink }}"></script>
+{{ end }}

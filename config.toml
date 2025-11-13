@@ -1,0 +1,131 @@
+baseURL = 'https://toannd021104.github.io/devops-blog/'
+languageCode = 'en-us'
+defaultContentLanguage = 'en'
+title = 'DevOps & Cloud Blog'
+theme = 'PaperMod'
+paginate = 12
+
+# Enable taxonomies
+[taxonomies]
+  category = 'categories'
+  tag = 'tags'
+  series = 'series'
+
+# Menu configuration
+[menu]
+  [[menu.main]]
+    identifier = "home"
+    name = "Trang chủ"
+    url = "/"
+    weight = 1
+
+  [[menu.main]]
+    identifier = "posts"
+    name = "Bài viết"
+    url = "/posts/"
+    weight = 10
+
+  [[menu.main]]
+    identifier = "categories"
+    name = "Chủ đề"
+    url = "/categories/"
+    weight = 20
+
+  [[menu.main]]
+    identifier = "series"
+    name = "Series"
+    url = "/series/"
+    weight = 30
+
+  [[menu.main]]
+    identifier = "tags"
+    name = "Tags"
+    url = "/tags/"
+    weight = 40
+
+  [[menu.main]]
+    identifier = "archives"
+    name = "Archive"
+    url = "/archives/"
+    weight = 50
+
+# PaperMod theme parameters
+[params]
+  defaultTheme = "auto"
+  ShowReadingTime = true
+  ShowShareButtons = true
+  ShowPostNavLinks = true
+  ShowBreadCrumbs = true
+  ShowCodeCopyButtons = true
+  ShowWordCount = true
+  ShowRssButtonInSectionTermList = true
+  UseHugoToc = true
+  disableSpecial1stPost = false
+  disableScrollToTop = false
+  comments = false
+  hidemeta = false
+  hideSummary = false
+  showtoc = true
+  tocopen = true
+
+  [params.homeInfoParams]
+    Title = "DevOps & Cloud Blog"
+    Content = """
+Chào mừng đến với blog của tôi!
+
+Nơi chia sẻ kiến thức về DevOps, Cloud, Kubernetes, Docker, CI/CD và các công nghệ liên quan.
+
+Tìm hiểu qua các Series bài viết có hệ thống - Từ cơ bản đến nâng cao
+    """
+
+  [[params.socialIcons]]
+    name = "github"
+    url = "https://github.com/toannd021104"
+
+  [[params.socialIcons]]
+    name = "gitlab"
+    url = "https://gitlab.com/toanndcloud"
+
+  [[params.socialIcons]]
+    name = "linkedin"
+    url = "https://www.linkedin.com/in/toanndcloud/"
+
+  [[params.socialIcons]]
+    name = "email"
+    url = "mailto:toanndcloud@gmail.com"
+
+  [params.cover]
+    hidden = false
+    hiddenInList = false
+    hiddenInSingle = false
+
+  [params.fuseOpts]
+    isCaseSensitive = false
+    shouldSort = true
+    location = 0
+    distance = 1000
+    threshold = 0.4
+    minMatchCharLength = 0
+    keys = ["title", "permalink", "summary", "content"]
+
+# Enable search (disable RSS for Hugo 0.92 compatibility)
+[outputs]
+  home = ["HTML", "JSON"]
+  section = ["HTML"]
+  taxonomy = ["HTML"]
+  term = ["HTML"]
+
+# Permalinks
+[permalinks]
+  posts = "/:year/:month/:title/"
+
+# Markup configuration for syntax highlighting
+[markup]
+  [markup.highlight]
+    anchorLineNos = false
+    codeFences = true
+    guessSyntax = true
+    lineNos = true
+    noClasses = false
+    style = "monokai"
+    tabWidth = 4

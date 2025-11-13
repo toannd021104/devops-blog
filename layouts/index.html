@@ -1,0 +1,70 @@
+{{- define "main" }}
+
+{{- if site.Params.profileMode.enabled }}
+{{- partial "index_profile" . }}
+{{- else }}
+
+{{- /* Home Info Section */ -}}
+{{- if and .Site.Params.homeInfoParams (eq .Paginator.PageNumber 1) }}
+{{- partial "home_info.html" . }}
+{{- end }}
+
+{{- /* Search Box */ -}}
+<div class="search-container">
+    <input type="text"
+           id="live-search-input"
+           class="search-input"
+           placeholder="🔍 Tìm kiếm bài viết theo tiêu đề, nội dung...">
+</div>
+
+{{- /* Post List */ -}}
+<div class="post-list-container">
+    {{- $pages := where site.RegularPages "Type" "in" site.Params.mainSections }}
+    {{- $paginator := .Paginate $pages }}
+
+    {{- range $index, $page := $paginator.Pages }}
+    <article class="post-entry">
+        {{- $isHidden := (site.Params.cover.hidden | default site.Params.cover.hiddenInList) }}
+        {{- partial "cover.html" (dict "cxt" . "IsHome" true "isHidden" $isHidden) }}
+        <header class="entry-header">
+            <h2>
+                {{- .Title }}
+                {{- if .Draft }}<sup><span class="entry-isdraft">&nbsp;&nbsp;[draft]</span></sup>{{- end }}
+            </h2>
+        </header>
+        {{- if (ne (.Param "hideSummary") true) }}
+        <div class="entry-content">
+            <p>{{ .Summary | plainify | htmlUnescape }}{{ if .Truncated }}...{{ end }}</p>
+        </div>
+        {{- end }}
+        {{- if not (.Param "hideMeta") }}
+        <footer class="entry-footer">
+            {{- partial "post_meta.html" . -}}
+        </footer>
+        {{- end }}
+        <a class="entry-link" aria-label="post link to {{ .Title | plainify }}" href="{{ .Permalink }}"></a>
+    </article>
+    {{- end }}
+
+    {{- /* No results message */ -}}
+    <div id="no-results" class="no-results">
+        Không tìm thấy bài viết nào phù hợp 😔
+    </div>
+</div>
+
+{{- if gt .Paginator.TotalPages 1 }}
+<footer class="page-footer">
+    <nav class="pagination">
+        {{- if .Paginator.HasPrev }}
+        <a class="prev" href="{{ .Paginator.Prev.URL | absURL }}">« Prev</a>
+        {{- end }}
+        {{- if .Paginator.HasNext }}
+        <a class="next" href="{{ .Paginator.Next.URL | absURL }}">Next »</a>
+        {{- end }}
+    </nav>
+</footer>
+{{- end }}
+
+{{- end }}{{/* end profileMode */}}
+
+{{- end }}{{/* end main */}}

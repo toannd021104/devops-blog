@@ -1,0 +1,194 @@
+/* Grid Layout for Posts - 3 columns */
+.post-list-container {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+    padding: 0 20px;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.post-entry {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    background: var(--entry);
+}
+
+.post-entry:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 16px rgba(0,0,0,0.15);
+    border-color: var(--primary);
+}
+
+/* Responsive - 2 columns on tablet */
+@media screen and (max-width: 1024px) {
+    .post-list-container {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+/* Responsive - 1 column on mobile */
+@media screen and (max-width: 640px) {
+    .post-list-container {
+        grid-template-columns: 1fr;
+        padding: 0 10px;
+        gap: 16px;
+    }
+}
+
+/* Style for post entry */
+.post-entry .entry-header {
+    margin-bottom: 12px;
+}
+
+.post-entry .entry-header h2 {
+    font-size: 1.25rem;
+    line-height: 1.4;
+    margin-bottom: 8px;
+}
+
+.post-entry .entry-content {
+    font-size: 0.9rem;
+    line-height: 1.6;
+    color: var(--secondary);
+    margin-bottom: 12px;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.post-entry .entry-footer {
+    font-size: 0.85rem;
+    color: var(--secondary);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+/* Category badges */
+.post-entry .entry-footer span {
+    background: var(--code-bg);
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+}
+
+/* Container for grid */
+.main {
+    display: block;
+}
+
+/* Improve homepage info section */
+.first-entry {
+    text-align: center;
+    border: none;
+    box-shadow: none;
+    margin: 20px auto;
+    max-width: 800px;
+}
+
+.first-entry:hover {
+    transform: none !important;
+    box-shadow: none !important;
+}
+
+/* Search page styling */
+#searchResults {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+}
+
+#searchResults li {
+    width: calc(33.333% - 14px);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    list-style: none;
+    transition: all 0.3s ease;
+}
+
+#searchResults li:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 16px rgba(0,0,0,0.15);
+}
+
+@media screen and (max-width: 960px) {
+    #searchResults li {
+        width: calc(50% - 10px);
+    }
+}
+
+@media screen and (max-width: 640px) {
+    #searchResults li {
+        width: 100%;
+    }
+}
+
+/* Better spacing for post metadata */
+.post-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    font-size: 0.85rem;
+}
+
+.post-meta > * {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* Search Box on Homepage */
+.search-container {
+    width: 100%;
+    max-width: 600px;
+    margin: 30px auto;
+    padding: 0 20px;
+}
+
+.search-input {
+    width: 100%;
+    padding: 15px 20px;
+    font-size: 1rem;
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    background: var(--entry);
+    color: var(--content);
+    transition: all 0.3s ease;
+    outline: none;
+}
+
+.search-input:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+}
+
+.search-input::placeholder {
+    color: var(--secondary);
+    opacity: 0.6;
+}
+
+/* Hide posts that don't match search */
+.post-entry.hidden {
+    display: none !important;
+}
+
+/* No results message */
+.no-results {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--secondary);
+    font-size: 1.1rem;
+    display: none;
+}
+
+.no-results.show {
+    display: block;
+}
