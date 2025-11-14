@@ -192,3 +192,163 @@
 .no-results.show {
     display: block;
 }
+
+/* ============================================
+   Sticky Table of Contents with Scroll Spy
+   ============================================ */
+
+/* Make ToC sticky on the right side */
+.toc {
+    position: fixed !important;
+    top: 80px;
+    right: 20px;
+    max-height: calc(100vh - 100px);
+    overflow-y: auto;
+    padding: 12px;
+    background: transparent;
+    font-size: 0.9rem;
+    z-index: 10;
+}
+
+/* Remove bullet points */
+.toc ul {
+    list-style: none;
+    padding-left: 0;
+    margin: 0;
+}
+
+.toc ul ul {
+    padding-left: 16px;
+    margin-top: 4px;
+}
+
+/* Scrollbar styling for ToC */
+.toc::-webkit-scrollbar {
+    width: 4px;
+}
+
+.toc::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.toc::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 2px;
+}
+
+.toc::-webkit-scrollbar-thumb:hover {
+    background: var(--secondary);
+}
+
+/* ToC links styling */
+.toc a {
+    display: block;
+    padding: 4px 0;
+    margin: 4px 0;
+    color: var(--secondary);
+    text-decoration: none;
+    transition: color 0.2s ease;
+    font-size: 0.9rem;
+    line-height: 1.6;
+}
+
+.toc a:hover {
+    color: var(--primary);
+}
+
+/* Active (current section) styling */
+.toc a.active {
+    color: var(--primary) !important;
+    font-weight: 600;
+}
+
+/* Nested ToC items */
+.toc ul ul a {
+    font-size: 0.85rem;
+    padding: 3px 0;
+    color: var(--secondary);
+    opacity: 0.85;
+}
+
+/* ToC header */
+.toc details summary {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 12px;
+    cursor: pointer;
+    color: var(--content);
+    padding: 4px 0;
+    user-select: none;
+}
+
+.toc details summary:hover {
+    color: var(--primary);
+}
+
+/* Smooth scroll behavior */
+html {
+    scroll-behavior: smooth;
+}
+
+/* Add scroll padding to account for sticky header */
+html {
+    scroll-padding-top: 100px;
+}
+
+/* Post content with ToC - adjust width */
+@media screen and (min-width: 1280px) {
+    .toc {
+        width: 220px;
+    }
+}
+
+/* Hide ToC on mobile */
+@media screen and (max-width: 1279px) {
+    .toc {
+        position: relative !important;
+        top: 0;
+        right: auto;
+        margin: 20px 0;
+        max-height: none;
+        width: 100%;
+    }
+}
+
+/* ============================================
+   Code Block Formatting
+   ============================================ */
+
+/* Prevent code from wrapping */
+.post-content pre,
+pre,
+.highlight pre,
+div.highlight pre {
+    overflow-x: auto !important;
+    white-space: pre !important;
+    word-wrap: normal !important;
+}
+
+.post-content pre code,
+pre code,
+.highlight pre code,
+div.highlight pre code {
+    white-space: pre !important;
+    word-wrap: normal !important;
+    overflow-wrap: normal !important;
+    word-break: normal !important;
+}
+
+/* Don't apply to inline code, only to code blocks */
+.post-content pre > code,
+pre > code {
+    white-space: pre !important;
+}
+
+/* Make sure code blocks scroll horizontally */
+pre {
+    max-width: 100%;
+}
+
+.highlight {
+    overflow-x: auto !important;
+}

@@ -1,0 +1,5 @@
+{{- /* Load ToC scroll spy script */ -}}
+{{- if .Params.ShowToc -}}
+{{ $tocScrollSpy := resources.Get "js/toc-scroll-spy.js" | minify }}
+<script src="{{ $tocScrollSpy.RelPermalink }}"></script>
+{{- end -}}
