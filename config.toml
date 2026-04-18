@@ -28,28 +28,16 @@ theme = 'PaperMod'
     weight = 10
 
   [[menu.main]]
-    identifier = "categories"
-    name = "Chủ đề"
-    url = "/categories/"
-    weight = 20
-
-  [[menu.main]]
     identifier = "series"
     name = "Series"
     url = "/series/"
-    weight = 30
+    weight = 20
 
   [[menu.main]]
     identifier = "tags"
     name = "Tags"
     url = "/tags/"
-    weight = 40
-
-  [[menu.main]]
-    identifier = "archives"
-    name = "Archive"
-    url = "/archives/"
-    weight = 50
+    weight = 30
 
 # PaperMod theme parameters
 [params]
@@ -127,7 +115,7 @@ Tìm hiểu qua các Series bài viết có hệ thống - Từ cơ bản đến
     anchorLineNos = false
     codeFences = true
     guessSyntax = true
-    lineNos = true
+    lineNos = false
     noClasses = false
     style = "monokai"
     tabWidth = 4

@@ -1,0 +1,119 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* DevOps tech blog design system. All colors HSL. */
+
+@layer base {
+  :root {
+    --background: 0 0% 99%;
+    --foreground: 222 25% 12%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 25% 12%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 25% 12%;
+
+    --primary: 180 70% 35%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 210 20% 96%;
+    --secondary-foreground: 222 25% 12%;
+
+    --muted: 210 20% 94%;
+    --muted-foreground: 215 15% 45%;
+
+    --accent: 180 70% 35%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 70% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 214 20% 88%;
+    --input: 214 20% 88%;
+    --ring: 180 70% 35%;
+
+    --radius: 0.5rem;
+
+    --gradient-hero:
+      radial-gradient(ellipse at top left, hsl(180 70% 35% / 0.08), transparent 50%),
+      radial-gradient(ellipse at bottom right, hsl(260 60% 60% / 0.05), transparent 50%),
+      linear-gradient(180deg, hsl(0 0% 99%) 0%, hsl(210 20% 97%) 100%);
+    --gradient-glow: linear-gradient(135deg, hsl(180 70% 35%), hsl(200 70% 40%));
+    --shadow-glow: 0 0 40px -8px hsl(180 70% 35% / 0.2);
+    --shadow-card: 0 4px 20px -6px hsl(0 0% 0% / 0.08);
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+    --font-display: 'Space Grotesk', system-ui, sans-serif;
+    --font-sans: 'Inter', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+    --sidebar-background: 0 0% 99%;
+    --sidebar-foreground: 222 25% 12%;
+    --sidebar-primary: 180 70% 35%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 210 20% 96%;
+    --sidebar-accent-foreground: 222 25% 12%;
+    --sidebar-border: 214 20% 88%;
+    --sidebar-ring: 180 70% 35%;
+  }
+
+  .dark {
+    --background: 222 30% 7%;
+    --foreground: 210 30% 92%;
+
+    --card: 222 25% 10%;
+    --card-foreground: 210 30% 92%;
+
+    --popover: 222 25% 10%;
+    --popover-foreground: 210 30% 92%;
+
+    --primary: 180 85% 50%;
+    --primary-foreground: 222 40% 8%;
+
+    --secondary: 222 22% 14%;
+    --secondary-foreground: 210 30% 92%;
+
+    --muted: 222 18% 16%;
+    --muted-foreground: 215 15% 60%;
+
+    --accent: 180 85% 50%;
+    --accent-foreground: 222 40% 8%;
+
+    --destructive: 0 70% 55%;
+    --destructive-foreground: 210 30% 98%;
+
+    --border: 222 20% 20%;
+    --input: 222 20% 20%;
+    --ring: 180 85% 50%;
+
+    --gradient-hero:
+      radial-gradient(ellipse at top left, hsl(180 85% 50% / 0.12), transparent 50%),
+      radial-gradient(ellipse at bottom right, hsl(260 80% 60% / 0.08), transparent 50%),
+      linear-gradient(180deg, hsl(222 30% 7%) 0%, hsl(222 30% 5%) 100%);
+    --shadow-glow: 0 0 40px -8px hsl(180 85% 50% / 0.35);
+    --shadow-card: 0 8px 30px -12px hsl(0 0% 0% / 0.5);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-sans);
+    font-feature-settings: "ss01", "cv11";
+  }
+
+  h1, h2, h3, h4 {
+    font-family: var(--font-display);
+    letter-spacing: -0.02em;
+  }
+
+  code, pre, .font-mono {
+    font-family: var(--font-mono);
+  }
+}

@@ -1,14 +1,17 @@
 ---
-title: "Online Boutique - Phân tích mã nguồn ứng dụng microservices của Google"
+title: "Part 1: Online Boutique - Phân tích mã nguồn ứng dụng microservices của Google"
 date: 2025-11-14T01:45:00+07:00
 draft: false
 tags: ["microservices", "docker", "google-cloud", "architecture", "devops"]
 categories: ["DevOps", "Microservices"]
-series: ["Google Microservices Demo"]
+series: ["DevOps Skills Showcase"]
+weight: 1
 description: "Phân tích chi tiết kiến trúc và luồng hoạt động của ứng dụng Online Boutique - dự án microservices-demo từ Google"
 ShowToc: true
 TocOpen: true
 ---
+
+> **Part 1 of 8**: Introduction → [Part 2: Deep Dive](/posts/microservices-boutique-02-deep-dive) → [Part 3: Docker](/posts/docker-fundamentals-hands-on) → [Part 4: Kubernetes](/posts/kubernetes-fundamentals-hands-on) → [Part 5: AWS + Terraform](/posts/aws-ecs-terraform-hands-on) → [Part 6: GitLab CI/CD](/posts/gitlab-cicd-hands-on) → [Part 7: DevSecOps](/posts/devsecops-security-hands-on) → [Part 8: Prometheus + Grafana](/posts/prometheus-grafana-hands-on)
 
 # Giới thiệu
 

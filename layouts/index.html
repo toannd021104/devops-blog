@@ -4,17 +4,39 @@
 {{- partial "index_profile" . }}
 {{- else }}
 
-{{- /* Home Info Section */ -}}
-{{- if and .Site.Params.homeInfoParams (eq .Paginator.PageNumber 1) }}
-{{- partial "home_info.html" . }}
+{{- /* Hero Section */ -}}
+{{- if eq .Paginator.PageNumber 1 }}
+<div class="hero-section">
+    <h1 class="hero-title">DevOps & Cloud Blog</h1>
+    <p class="hero-subtitle">Kiến thức DevOps, Cloud, Kubernetes, Docker & CI/CD – trực quan và dễ hiểu.</p>
+    <p class="hero-description">Series bài viết có cấu trúc rõ ràng, dễ kèm thực hành & best-practices.</p>
+
+    <div class="topic-tags">
+        <a href="/tags/docker/" class="topic-tag">Docker</a>
+        <a href="/tags/kubernetes/" class="topic-tag">Kubernetes</a>
+        <a href="/tags/aws/" class="topic-tag">AWS</a>
+        <a href="/tags/gitlab/" class="topic-tag">GitLab CI/CD</a>
+        <a href="/tags/terraform/" class="topic-tag">Terraform</a>
+        <a href="/tags/openstack/" class="topic-tag">OpenStack</a>
+    </div>
+</div>
 {{- end }}
 
-{{- /* Search Box */ -}}
+{{- /* Search Box & Sort */ -}}
 <div class="search-container">
     <input type="text"
            id="live-search-input"
            class="search-input"
            placeholder="🔍 Tìm kiếm bài viết theo tiêu đề, nội dung...">
+    <div class="sort-container">
+        <label for="sort-select">Sắp xếp:</label>
+        <select id="sort-select" class="sort-select">
+            <option value="date-desc">Mới nhất</option>
+            <option value="date-asc">Cũ nhất</option>
+            <option value="title-asc">Tiêu đề (A-Z)</option>
+            <option value="title-desc">Tiêu đề (Z-A)</option>
+        </select>
+    </div>
 </div>
 
 {{- /* Post List */ -}}
@@ -23,7 +45,7 @@
     {{- $paginator := .Paginate $pages }}
 
     {{- range $index, $page := $paginator.Pages }}
-    <article class="post-entry">
+    <article class="post-entry" data-date="{{ .Date.Format "2006-01-02" }}" data-title="{{ .Title | lower }}">
         {{- $isHidden := (site.Params.cover.hidden | default site.Params.cover.hiddenInList) }}
         {{- partial "cover.html" (dict "cxt" . "IsHome" true "isHidden" $isHidden) }}
         <header class="entry-header">

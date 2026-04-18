@@ -3,3 +3,224 @@
 {{ if $search }}
 <script src="{{ $search.RelPermalink }}"></script>
 {{ end }}
+
+{{- /* Custom CSS */ -}}
+<style>
+/* Fix code block formatting - prevent line wrapping */
+/* Override theme's word-break: break-all */
+.post-content .highlight:not(table),
+.post-content .highlight,
+.highlight pre,
+.highlight code,
+.highlight,
+pre code,
+code,
+.post-content pre,
+.post-content code,
+div.highlight pre,
+div.highlight code,
+pre,
+.post-content pre code,
+.post-content .highlight pre,
+.post-content .highlight code,
+.highlight span,
+.highlight pre span,
+code span {
+  white-space: pre !important;
+  overflow-x: auto !important;
+  word-wrap: normal !important;
+  word-break: normal !important;
+  overflow-wrap: normal !important;
+  display: inline !important;
+}
+
+.highlight,
+div.highlight,
+.post-content .highlight,
+.post-content .highlight:not(table) {
+  overflow-x: auto !important;
+  width: 100% !important;
+  max-width: 100%;
+  word-break: normal !important;
+  border-radius: 8px !important;
+  padding: 1rem !important;
+  margin: 1.5rem 0 !important;
+  display: block !important;
+  box-sizing: border-box !important;
+}
+
+/* Better code block styling */
+.highlight pre,
+.post-content .highlight pre {
+  margin: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  font-size: 0.9em !important;
+  line-height: 1.6 !important;
+}
+
+.highlight code,
+.post-content .highlight code {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace !important;
+  font-size: 0.9em !important;
+}
+
+/* Custom scrollbar for code blocks */
+.highlight::-webkit-scrollbar,
+.post-content .highlight::-webkit-scrollbar {
+  height: 8px;
+}
+
+.highlight::-webkit-scrollbar-track,
+.post-content .highlight::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+}
+
+.highlight::-webkit-scrollbar-thumb,
+.post-content .highlight::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+}
+
+.highlight::-webkit-scrollbar-thumb:hover,
+.post-content .highlight::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.live-search-highlight {
+  background-color: #ffeb3b;
+  font-weight: bold;
+}
+
+.search-container {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 2rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.search-input {
+  flex: 1;
+  min-width: 250px;
+}
+
+.sort-container {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sort-container label {
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.sort-select {
+  padding: 0.5rem;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background-color: var(--theme);
+  color: var(--primary);
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.sort-select:focus {
+  outline: 2px solid var(--tertiary);
+  outline-offset: 2px;
+}
+
+@media (max-width: 768px) {
+  .search-container {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .search-input {
+    width: 100%;
+  }
+
+  .sort-container {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
+/* Hero Section */
+.hero-section {
+  text-align: center;
+  padding: 3rem 2rem;
+  margin-bottom: 3rem;
+  background: linear-gradient(135deg, rgba(64, 123, 255, 0.05) 0%, rgba(138, 80, 255, 0.05) 100%);
+  border-radius: 12px;
+}
+
+.hero-title {
+  font-size: 3rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+  background: linear-gradient(135deg, #407BFF 0%, #8A50FF 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.hero-subtitle {
+  font-size: 1.25rem;
+  color: var(--primary);
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+}
+
+.hero-description {
+  font-size: 1rem;
+  color: var(--secondary);
+  margin-bottom: 2rem;
+}
+
+/* Topic Tags */
+.topic-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+  margin-top: 2rem;
+}
+
+.topic-tag {
+  display: inline-block;
+  padding: 0.5rem 1.25rem;
+  background-color: var(--theme);
+  color: var(--primary);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: all 0.3s ease;
+}
+
+.topic-tag:hover {
+  background: linear-gradient(135deg, #407BFF 0%, #8A50FF 100%);
+  color: white;
+  border-color: transparent;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(64, 123, 255, 0.3);
+}
+
+@media (max-width: 768px) {
+  .hero-title {
+    font-size: 2rem;
+  }
+
+  .hero-subtitle {
+    font-size: 1.1rem;
+  }
+
+  .hero-section {
+    padding: 2rem 1rem;
+  }
+}
+</style>

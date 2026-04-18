@@ -3,6 +3,11 @@
 /resources/_gen/
 .hugo_build.lock
 
+# React / Vite
+node_modules/
+dist/
+*.local
+
 # OS
 .DS_Store
 Thumbs.db
