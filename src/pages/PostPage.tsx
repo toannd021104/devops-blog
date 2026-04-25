@@ -154,14 +154,13 @@ const PostPage = () => {
                   h2: ({ children }) => {
                     const id = slugify(String(children));
                     return (
-                      <h2 id={id} className="mt-12 mb-4 flex items-center gap-3 font-display text-2xl font-bold text-foreground scroll-mt-24">
-                        <span className="h-[2px] w-6 shrink-0 rounded bg-primary" />
+                      <h2 id={id} className="mt-12 mb-4 font-display text-2xl font-bold text-foreground scroll-mt-24">
                         {children}
                       </h2>
                     );
                   },
                   h3: ({ children }) => (
-                    <h3 className="mt-8 mb-3 font-display text-lg font-semibold text-foreground border-l-2 border-primary pl-3 scroll-mt-24">
+                    <h3 className="mt-8 mb-3 font-display text-lg font-semibold text-foreground scroll-mt-24">
                       {children}
                     </h3>
                   ),

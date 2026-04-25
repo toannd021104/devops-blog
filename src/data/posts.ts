@@ -1,8 +1,3 @@
-import post1 from "@/assets/post-1.jpg";
-import post2 from "@/assets/post-2.jpg";
-import post3 from "@/assets/post-3.jpg";
-import post4 from "@/assets/post-4.jpg";
-
 export type Post = {
   id: string;
   slug: string;
@@ -17,113 +12,147 @@ export type Post = {
   content: string;
 };
 
-export const featuredPost: Post = {
-  id: "0",
-  slug: "kubectl-cheatsheet-daily",
-  title: "10 kubectl commands I use every single day",
-  excerpt:
-    "Not the docs version — just the real ones that save me time in production. Copy-paste ready.",
-  category: "Kubernetes",
-  date: "Apr 16, 2026",
-  readTime: "3 min read",
-  image: post2,
-  summary: [
-    "10 real kubectl commands used in production daily",
-    "How to tail logs, exec into pods, and debug crashes",
-    "Port-forwarding, rollout status, and resource monitoring",
-  ],
-  takeaways: [
-    "Use kubectl describe to read the Events section — it explains 90% of pod failures",
-    "kubectl rollout status blocks until a deploy succeeds or fails — chain it with apply",
-    "kubectl top pods requires metrics-server; install it early in every cluster",
-  ],
-  content: `
-I've been working with Kubernetes for a few years now and these are the commands I type almost every single day. No fluff — just the ones that actually matter.
-
-## 1. Get everything in a namespace
-
-\`\`\`bash
-kubectl get all -n my-namespace
-\`\`\`
-
-One command to see deployments, pods, services, and replicasets. I start here when something breaks.
-
-## 2. Tail logs from a pod
-
-\`\`\`bash
-kubectl logs -f pod-name -n my-namespace
-\`\`\`
-
-The \`-f\` flag streams live. Add \`--previous\` if the pod already crashed and you need to see why.
-
-## 3. Exec into a running container
-
-\`\`\`bash
-kubectl exec -it pod-name -n my-namespace -- /bin/sh
-\`\`\`
-
-Use \`/bin/bash\` if the image has it. Invaluable for debugging network issues from inside the pod.
-
-## 4. Describe a broken pod
-
-\`\`\`bash
-kubectl describe pod pod-name -n my-namespace
-\`\`\`
-
-The **Events** section at the bottom tells you exactly why a pod is stuck in Pending or CrashLoopBackOff.
-
-## 5. Watch pod status in real time
-
-\`\`\`bash
-kubectl get pods -n my-namespace -w
-\`\`\`
-
-Add \`-w\` to watch. Great during deployments to see pods rolling over.
-
-## 6. Port-forward to a service
-
-\`\`\`bash
-kubectl port-forward svc/my-service 8080:80 -n my-namespace
-\`\`\`
-
-Test a service locally without exposing it. Faster than setting up an ingress for debugging.
-
-## 7. Apply and watch
-
-\`\`\`bash
-kubectl apply -f deployment.yaml && kubectl rollout status deployment/my-app -n my-namespace
-\`\`\`
-
-Chain these together. The second command blocks until the rollout completes or fails.
-
-## 8. Force delete a stuck pod
-
-\`\`\`bash
-kubectl delete pod pod-name -n my-namespace --grace-period=0 --force
-\`\`\`
-
-Only use this when a pod is stuck in Terminating. Don't make it a habit.
-
-## 9. Copy files from a pod
-
-\`\`\`bash
-kubectl cp my-namespace/pod-name:/app/logs/error.log ./error.log
-\`\`\`
-
-Useful for pulling log files or config dumps out of a running container.
-
-## 10. Check resource usage
-
-\`\`\`bash
-kubectl top pods -n my-namespace
-\`\`\`
-
-Requires metrics-server installed. Shows CPU and memory at a glance — essential for spotting runaway pods.
-
----
-
-That's my daily toolkit. Bookmark this, put it in your notes, tattoo it somewhere — whatever works for you.
-`,
+type PostFrontmatter = Omit<Post, "image"> & {
+  image: string;
+  featured?: boolean;
 };
 
-export const posts: Post[] = [];
+const markdownModules = import.meta.glob("../content/posts/*.md", {
+  eager: true,
+  query: "?raw",
+  import: "default",
+}) as Record<string, string>;
+const wallpaperModules = import.meta.glob("../assets/wallpapers/*.{jpg,jpeg,png,webp,avif}", {
+  eager: true,
+  import: "default",
+}) as Record<string, string>;
+const wallpaperMap = Object.fromEntries(
+  Object.entries(wallpaperModules).map(([filePath, assetUrl]) => [
+    filePath.split("/").pop() ?? filePath,
+    assetUrl,
+  ])
+);
+
+const stripQuotes = (value: string) => {
+  const trimmed = value.trim();
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1);
+  }
+
+  return trimmed;
+};
+
+const parseFrontmatterValue = (value: string) => {
+  const normalized = stripQuotes(value);
+
+  if (normalized === "true") return true;
+  if (normalized === "false") return false;
+
+  return normalized;
+};
+
+const parseMarkdownFile = (raw: string, filePath: string) => {
+  const lines = raw.replace(/\r\n/g, "\n").split("\n");
+
+  if (lines[0] !== "---") {
+    throw new Error(`Missing frontmatter in ${filePath}`);
+  }
+
+  const endIndex = lines.indexOf("---", 1);
+  if (endIndex === -1) {
+    throw new Error(`Unclosed frontmatter in ${filePath}`);
+  }
+
+  const frontmatterLines = lines.slice(1, endIndex);
+  const content = lines.slice(endIndex + 1).join("\n").trim();
+  const meta: Record<string, string | string[] | boolean> = {};
+
+  let currentArrayKey: string | null = null;
+
+  for (const line of frontmatterLines) {
+    if (!line.trim()) continue;
+
+    const arrayMatch = line.match(/^\s*-\s+(.*)$/);
+    if (arrayMatch && currentArrayKey) {
+      const existing = meta[currentArrayKey];
+      if (!Array.isArray(existing)) {
+        throw new Error(`Invalid array frontmatter for ${currentArrayKey} in ${filePath}`);
+      }
+      existing.push(stripQuotes(arrayMatch[1]));
+      continue;
+    }
+
+    const keyMatch = line.match(/^([A-Za-z0-9_]+):\s*(.*)$/);
+    if (!keyMatch) {
+      throw new Error(`Unsupported frontmatter line "${line}" in ${filePath}`);
+    }
+
+    const [, key, value] = keyMatch;
+    if (value === "") {
+      meta[key] = [];
+      currentArrayKey = key;
+      continue;
+    }
+
+    meta[key] = parseFrontmatterValue(value);
+    currentArrayKey = null;
+  }
+
+  const requiredFields = [
+    "id",
+    "slug",
+    "title",
+    "excerpt",
+    "category",
+    "date",
+    "readTime",
+    "image",
+    "summary",
+    "takeaways",
+  ] as const;
+
+  for (const field of requiredFields) {
+    if (!(field in meta)) {
+      throw new Error(`Missing "${field}" in ${filePath}`);
+    }
+  }
+
+  const image = String(meta.image);
+  const resolvedImage = wallpaperMap[image];
+  if (!resolvedImage) {
+    throw new Error(`Unknown wallpaper "${image}" in ${filePath}`);
+  }
+
+  return {
+    ...meta,
+    image: resolvedImage,
+    content,
+  } as PostFrontmatter & Post;
+};
+
+const sortByDateDesc = (a: Post, b: Post) => {
+  const timeA = Date.parse(a.date);
+  const timeB = Date.parse(b.date);
+
+  if (Number.isNaN(timeA) || Number.isNaN(timeB)) {
+    return 0;
+  }
+
+  return timeB - timeA;
+};
+
+const allParsedPosts = Object.entries(markdownModules)
+  .map(([filePath, raw]) => parseMarkdownFile(raw, filePath))
+  .sort(sortByDateDesc);
+
+const featuredCandidate = allParsedPosts.find((post) => post.featured) ?? allParsedPosts[0];
+
+if (!featuredCandidate) {
+  throw new Error("No blog posts were found in src/content/posts");
+}
+
+export const featuredPost: Post = featuredCandidate;
+export const posts: Post[] = allParsedPosts.filter((post) => post.slug !== featuredPost.slug);
