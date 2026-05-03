@@ -3,6 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import { ArrowLeft } from "lucide-react";
 import { posts, featuredPost } from "@/data/posts";
+import { allImages } from "@/data/images";
 import Header from "@/components/blog/Header";
 import Footer from "@/components/blog/Footer";
 
@@ -222,6 +223,13 @@ const PostPage = () => {
                       {children}
                     </a>
                   ),
+                  img: ({ src, alt }) => {
+                    const filename = src?.split("/").pop() ?? "";
+                    const resolved = allImages[filename] ?? src;
+                    return (
+                      <img src={resolved} alt={alt ?? ""} className="my-6 w-full rounded-xl border border-border" />
+                    );
+                  },
                 }}
               >
                 {post.content}
