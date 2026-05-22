@@ -12,7 +12,7 @@ const PostCard = ({ post }: { post: Post }) => {
           width={1024}
           height={768}
           loading="lazy"
-          className="h-full w-full object-cover transition-smooth duration-700 group-hover:scale-105 group-hover:opacity-90"
+          className="h-full w-full object-cover object-center transition-smooth duration-700 group-hover:scale-105 group-hover:opacity-90"
         />
       </div>
       <div className="space-y-3">

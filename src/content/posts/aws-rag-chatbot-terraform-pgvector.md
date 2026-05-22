@@ -6,7 +6,7 @@ excerpt: "Ghi lại quá trình biến một RAG demo thành hệ thống có th
 category: "AWS"
 date: "May 20, 2026"
 readTime: "9 min read"
-image: "security.jpg"
+image: "rag-aws-serverless.jpg"
 summary:
   - "Kiến trúc RAG chatbot chạy trên API Gateway, Lambda, Cognito, S3, DynamoDB và RDS PostgreSQL pgvector"
   - "Các lỗi thực tế: answer bị hard-code, message role sai, duplicate documents, source khó kiểm chứng"

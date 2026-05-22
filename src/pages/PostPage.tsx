@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { ArrowLeft } from "lucide-react";
 import { posts, featuredPost } from "@/data/posts";
 import { allImages } from "@/data/images";
@@ -151,6 +152,7 @@ const PostPage = () => {
             {/* Article body */}
             <article className="mt-10">
               <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
                 components={{
                   h2: ({ children }) => {
                     const id = slugify(String(children));
