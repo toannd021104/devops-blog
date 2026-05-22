@@ -76,6 +76,8 @@ Tình huống phổ biến: vừa kết thúc một buổi họp, cần gửi em
 
 **Setup một lần:** Settings → Capabilities → Connections → Authenticate Outlook. Xong.
 
+![Amazon Quick Connectors](../../assets/wallpapers/amazon-quick-connectors.png)
+
 **Prompt:**
 
 ```
@@ -96,12 +98,16 @@ Bình → Cài đặt hệ thống theo dõi và cảnh báo (hạn 27/05)
 Cường → Kiểm tra phân quyền truy cập (hạn 24/05)
 ```
 
+![Amazon Quick tóm tắt email họp](../../assets/wallpapers/amazon-quick-email-summary.png)
+
 Tiếp tục trong cùng conversation:
 
 ```
 Draft email gửi cho tất cả người tham gia,
 subject: "[Họp tháng 6] Tóm tắt và to-do - 22/05"
 ```
+
+![Amazon Quick soạn reply email](../../assets/wallpapers/amazon-quick-reply-email.png)
 
 Quick soạn draft, hiển thị preview để review, confirm thì gửi thẳng qua Outlook.
 
