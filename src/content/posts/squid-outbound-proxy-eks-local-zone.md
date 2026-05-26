@@ -6,7 +6,7 @@ excerpt: "AWS Local Zone giúp đưa workload tới gần user hơn, nhưng thi�
 category: "AWS"
 date: "May 1, 2026"
 readTime: "8 min read"
-image: "kubernetes.jpg"
+image: "aws-local-zone-squid-proxy.png"
 featured: true
 summary:
   - "AWS Local Zone đưa compute/storage/service tới gần user hơn để giảm latency"
