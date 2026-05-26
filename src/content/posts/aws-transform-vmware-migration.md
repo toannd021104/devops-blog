@@ -53,6 +53,8 @@ Khi vào workspace, màn hình chia đôi: bên trái là job management với c
 
 Điều này cũng có nghĩa là AI response có thể thay đổi giữa các lần chạy. Workshop của AWS còn note rõ: "The AI agent's responses may differ from the screenshots shown." Đây là hành vi bình thường của agentic system — focus vào outcome, không phải wording.
 
+![Giao diện làm việc của AWS Transform — job plan bên trái, AI chat bên phải, panel preview output có thể mở song song](../../assets/posts/aws-transform-vmware-migration/04-network-migration-complete.png)
+
 ---
 
 ## Trước khi bắt đầu
@@ -69,7 +71,7 @@ Khi enable lần đầu, Transform yêu cầu chọn KMS key để encrypt toàn
 > **Tại sao IAM Identity Center thay vì IAM user thông thường?**
 > IAM Identity Center cho phép quản lý quyền truy cập cho nhiều AWS application từ một nơi. User login một lần qua SSO và có access mà không cần credential riêng cho từng tool. IAM user thông thường không integrate được với Transform web app.
 
-![AWS Access Portal sau khi setup — AWS Transform app xuất hiện dưới Applications](01-identity-center-portal.png)
+![AWS Access Portal sau khi setup — AWS Transform app xuất hiện dưới Applications](../../assets/posts/aws-transform-vmware-migration/01-identity-center-portal.png)
 
 ---
 
@@ -85,7 +87,7 @@ Nếu bạn đang migrate một environment phức tạp với nhiều applicati
 
 ---
 
-![Source EC2 instances mô phỏng môi trường on-premises — Source-Wordpress-DB, Source-Wordpress-WEB, Source-OFBiz-DB, Source-OFBiz-WEB](02-source-instances.png)
+![Source EC2 instances mô phỏng môi trường on-premises — Source-Wordpress-DB, Source-Wordpress-WEB, Source-OFBiz-DB, Source-OFBiz-WEB](../../assets/posts/aws-transform-vmware-migration/02-source-instances.png)
 
 ## Business case: từ RVTools export ra PowerPoint trong vài phút
 
@@ -115,11 +117,9 @@ Sau khi setup xong, một migration job end-to-end đi qua các giai đoạn: up
 
 Điểm đáng chú ý là mọi action quan trọng đều cần human approval trước khi chạy — deploy network, launch test, launch cutover. Agent không tự làm gì mà không có người xác nhận. Đây là thiết kế có chủ ý: agentic AI đề xuất, con người quyết định.
 
-![Migration plan sau khi agent phân tích inventory — wave plan và dependency mapping sẵn sàng](03-migration-plan-output.png)
+![Migration plan sau khi agent phân tích inventory — wave plan và dependency mapping sẵn sàng](../../assets/posts/aws-transform-vmware-migration/03-migration-plan-output.png)
 
 Phần network conversion là chỗ tiết kiệm nhiều công sức nhất. Thay vì tự vẽ lại VPC architecture từ VMware topology, bạn upload NSX export và agent generate CloudFormation/CDK code. Có thể để Transform deploy thẳng hoặc download code về tích hợp vào pipeline riêng.
-
-![Network migration hoàn thành — VPC deployed, bi-directional connectivity verified](04-network-migration-complete.png)
 
 Trong quá trình thực tế với lab này, mình gặp lỗi MGN agent bị disconnect trên Wave 2 (OFBiz) sau khi để quá lâu. Agent timeout sau một thời gian idle — fix là reinstall agent hoặc skip wave nếu optional.
 
@@ -129,7 +129,7 @@ Trong quá trình thực tế với lab này, mình gặp lỗi MGN agent bị d
 
 Transform có unified dashboard theo dõi tiến độ theo bốn chiều: waves, applications, servers, networks. Replication status hiển thị Healthy/Lagging/Stalled ngay trên UI — không cần mở MGN console riêng.
 
-![Wave completed — agent báo cáo Wave 0 Rehost hoàn thành với đầy đủ server summary](08-wave-completed.png)
+![Wave completed — agent báo cáo Wave 0 Rehost hoàn thành với đầy đủ server summary](../../assets/posts/aws-transform-vmware-migration/08-wave-completed.png)
 
 ---
 
@@ -146,7 +146,7 @@ Một vài điểm cần biết trước khi dùng:
 - NSX import chỉ hoạt động trong end-to-end migration job
 - Control plane phải đặt ở `us-east-1` hoặc `eu-central-1`
 
-![Kết quả migrate — wordpress-web và wordpress-db chạy trên c7a.medium trong Target VPC, đúng với EC2 recommendation ban đầu](09-migrated-ec2-instances.png)
+![Kết quả migrate — wordpress-web và wordpress-db chạy trên c7a.medium trong Target VPC, đúng với EC2 recommendation ban đầu](../../assets/posts/aws-transform-vmware-migration/09-migrated-ec2-instances.png)
 
 ---
 

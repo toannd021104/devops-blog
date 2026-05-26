@@ -2,308 +2,353 @@
 id: "2"
 slug: "squid-outbound-proxy-eks-local-zone"
 title: "Tự làm NAT Gateway trên AWS Local Zone bằng Squid + EIP"
-excerpt: "AWS Local Zone không có NAT Gateway. Đây là hành trình tìm giải pháp thay thế bằng Squid forward proxy + Elastic IP trên EKS — kèm lệnh thực tế và các lỗi gặp phải."
+excerpt: "AWS Local Zone giúp đưa workload tới gần user hơn, nhưng thiếu NAT Gateway. Bài lab này dùng Squid proxy trên EKS để xử lý outbound traffic từ private app nodes."
 category: "AWS"
 date: "May 1, 2026"
-readTime: "10 min read"
+readTime: "8 min read"
 image: "kubernetes.jpg"
 featured: true
 summary:
-  - "AWS Local Zone thiếu nhiều dịch vụ quan trọng — NAT Gateway, NLB đều không có"
-  - "Squid DaemonSet với hostNetwork=true và EIP là cách tự làm egress NAT hiệu quả"
-  - "Các lỗi thực tế gặp phải khi deploy EKS trên Local Zone Perth — kèm cách fix"
+  - "AWS Local Zone đưa compute/storage/service tới gần user hơn để giảm latency"
+  - "Local Zone vẫn có hạn chế network: không có NAT Gateway, nhiều nơi không support NLB"
+  - "Bài lab dùng Squid proxy trên EKS để app nodes private đi internet bằng fixed Elastic IP"
 takeaways:
-  - "EIP phải allocate đúng network-border-group của Local Zone — EIP Region không gắn được"
-  - "Local Zone Perth không support NLB — phải dùng ClusterIP thay vì LoadBalancer"
-  - "Lambda + EventBridge giúp auto-assign EIP khi node scale mà không cần can thiệp thủ công"
-  - "map_public_ip_on_launch phải bật trên subnet — dù EIP được gắn thủ công sau"
+  - "App nodes nên nằm private subnet, không public IP, không NAT Gateway"
+  - "Proxy nodes nằm public subnet, mỗi node có một Elastic IP riêng"
+  - "App pods đi ra ngoài qua ClusterIP service của Squid bằng HTTP_PROXY / HTTPS_PROXY"
+  - "Squid ACL kiểm soát domain được phép gọi ra internet"
 ---
 
-Khi deploy EKS lên **AWS Local Zone** để giảm latency khi kết nối với các partner on-prem — thay vì đi vòng qua Singapore (~30-50ms), traffic chạy nội địa chỉ còn ~1-5ms.
+AWS Local Zone là phần mở rộng của một AWS Region, đặt gần một khu vực địa lý cụ thể hơn. Mục tiêu là đưa compute, storage và một số managed services tới gần user hoặc hệ thống on-prem để giảm latency.
 
-Yêu cầu nghe đơn giản: pods gọi ra API của partner với fixed source IP để whitelist.
+Ví dụ workload vẫn thuộc region `ap-southeast-2`, nhưng worker nodes có thể chạy ở Local Zone `ap-southeast-2-per-1a`. Với các hệ thống cần gọi API partner gần khu vực đó, việc đặt workload ở Local Zone giúp traffic không phải đi vòng quá xa.
 
-Bài này ghi lại quá trình tìm giải pháp thay thế: từ lúc hiểu ra vấn đề, đến thiết kế kiến trúc, đến từng lỗi thực tế gặp phải khi deploy trên Local Zone Perth (ap-southeast-2-per-1a).
+Nhưng Local Zone không đầy đủ như parent region. Khi dùng trong môi trường thật, thường cần để ý ba nhóm hạn chế:
 
----
+- **Dịch vụ và tính năng ít hơn:** ít lựa chọn EC2 instance type hơn, nhiều dịch vụ như NAT Gateway, RDS, ElastiCache, FSx hoặc một số loại Load Balancer có thể không có sẵn tùy Local Zone.
+- **Chi phí và data transfer:** tài nguyên trong Local Zone thường đắt hơn region chính, và traffic đi qua lại giữa Local Zone với parent region có thể phát sinh thêm phí mạng.
+- **HA, vị trí và scale:** Local Zone không có nhiều AZ độc lập như region chính, không phải khu vực nào cũng có Local Zone, và nếu user/partner ở xa Local Zone thì latency chưa chắc tốt hơn.
 
-## Xác nhận Local Zone có gì
-
-Đầu tiên opt-in Local Zone và kiểm tra service nào available:
-
-```bash
-aws ec2 modify-availability-zone-group \
-  --group-name ap-southeast-2-per-1 \
-  --opt-in-status opted-in \
-  --region ap-southeast-2
-
-aws ec2 describe-availability-zones \
-  --region ap-southeast-2 \
-  --all-availability-zones \
-  --filter "Name=zone-name,Values=ap-southeast-2-per-1a" \
-  --query 'AvailabilityZones[*].OptInStatus'
-```
-
-```json
-["opted-in"]
-```
-
-NAT Gateway không có trong danh sách. NLB cũng không. Những thứ này chỉ có ở Region chính.
+Bài lab này tập trung vào một vấn đề rất thực tế: **app pods chạy trong private subnet cần gọi internet/partner API bằng fixed source IP, nhưng Local Zone không có NAT Gateway**.
 
 ---
 
-## Phân tích vấn đề
+## Bài toán
 
-Bài toán gồm hai phần:
+Trong môi trường doanh nghiệp, app nodes thường không nên public. Workload nên nằm trong private subnet, không public IP và không có internet trực tiếp.
 
-1. **Network reachability** — pods trong private subnet không có đường ra internet
-2. **Fixed source IP** — traffic ra ngoài phải mang IP cố định để partner whitelist
+Nhưng app vẫn cần đi ra Internet hoặc gọi Partner API bằng fixed source IP, đồng thời chặn các domain không nằm trong whitelist.
 
-NAT Gateway giải quyết cả hai. Khi không có nó, cần tự xây.
+Ở region bình thường, cách quen thuộc là đi qua NAT Gateway. Ở Local Zone không có NAT Gateway, nên mình dùng hướng gần giống **NAT instance**, nhưng thay bằng **Squid forward proxy** để kiểm soát outbound ở mức domain.
 
-**Ý tưởng:** Chạy pod với `hostNetwork: true` trên worker node có EIP gắn vào ENI → traffic ra ngoài mang EIP của node. Về mặt network đây chính xác là những gì NAT Gateway làm. Thêm Squid vào để có URL whitelist và access control.
+---
 
-```
-App Pod
-  │  HTTP_PROXY=http://squid-proxy.squid.svc:3128
-  ↓
-Squid Pod (hostNetwork=true, node có EIP)
-  │  kiểm tra ACL whitelist
-  ↓
-Traffic ra ngoài src IP = EIP của node
-  ↓
-Partner (thấy fixed IP, đã whitelist)
+## Ý tưởng
+
+Flow mong muốn:
+
+```text
+App Pod trên private app node
+  -> HTTP_PROXY / HTTPS_PROXY
+  -> Squid ClusterIP Service trong EKS
+  -> Squid Pod trên proxy node
+  -> Elastic IP của proxy node
+  -> Internet Gateway
+  -> Partner APIs
 ```
 
 ---
 
 ## Kiến trúc
 
-![Squid Outbound Proxy Architecture](squid-eks-architecture.png)
+![Squid Outbound Proxy Architecture](../../assets/posts/squid-outbound-proxy-eks-local-zone/architecture-overview.jpg)
 
+```text
+AWS Region: ap-southeast-2
+VPC: 10.0.0.0/16
+
+EKS Control Plane
+  - ap-southeast-2a
+  - ap-southeast-2b
+
+AWS Local Zone: ap-southeast-2-per-1a
+
+Private App Subnet: 10.0.10.0/24
+  - App Node 1: no public IP
+  - App Node 2: no public IP
+  - App Pods use HTTP_PROXY / HTTPS_PROXY
+
+Public Proxy Subnet: 10.0.40.0/24
+  - Proxy Node 1: Squid Pod + EIP 96.0.3.85
+  - Proxy Node 2: Squid Pod + EIP 96.0.6.94
+  - Route 0.0.0.0/0 -> Internet Gateway
 ```
-VPC 10.0.0.0/16
-│
-├── ap-southeast-2a/b (Sydney)
-│   └── EKS Control Plane — bắt buộc ở Region, ít nhất 2 AZ
-│
-└── ap-southeast-2-per-1a (Perth — Local Zone)
-    └── Public  10.0.40.0/24  ← Proxy + App Worker Nodes
-          Squid DaemonSet, hostNetwork=true
-          EIP gắn vào ENI từng node
-          → IGW → Internet
-```
+
+App pod không đi thẳng ra Internet Gateway; toàn bộ outbound phải qua Squid service rồi ra ngoài bằng EIP của proxy node.
 
 ---
 
-## Deploy
+## Thực hiện
 
-### 1. EKS Cluster
+:::debug-accordion
+::item 1. VPC và subnet
+
+Tạo VPC `10.0.0.0/16`, một private subnet cho app nodes và một public subnet cho proxy nodes:
 
 ```hcl
-module "eks" {
-  source          = "terraform-aws-modules/eks/aws"
-  cluster_name    = "eks-outbound-proxy"
-  cluster_version = "1.31"
+resource "aws_vpc" "main" {
+  cidr_block           = "10.0.0.0/16"
+  enable_dns_hostnames = true
+  enable_dns_support   = true
 
-  subnet_ids = [
-    aws_subnet.cp_az1.id,   # ap-southeast-2a
-    aws_subnet.cp_az2.id,   # ap-southeast-2b
-  ]
+  tags = {
+    Name = "frt-outbound-proxy-vpc"
+  }
+}
 
-  eks_managed_node_groups = {
-    proxy_nodes = {
-      subnet_ids     = [aws_subnet.proxy.id]
-      instance_types = ["t3.medium"]
+resource "aws_subnet" "app" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.10.0/24"
+  availability_zone       = var.local_zone
+  map_public_ip_on_launch = false
+}
 
-      labels = { "node-role" = "proxy-node" }
-      taints = [{ key = "proxy-only", value = "true", effect = "NO_SCHEDULE" }]
-      tags   = { "proxy-node" = "true" }
-    }
+resource "aws_subnet" "proxy" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.40.0/24"
+  availability_zone       = var.local_zone
+  map_public_ip_on_launch = true
+}
+
+resource "aws_route_table" "proxy_public" {
+  vpc_id = aws_vpc.main.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.main.id
   }
 }
 ```
 
-```bash
-terraform apply -auto-approve
-```
+Vì app subnet private không có NAT, app pod không thể đi Internet trực tiếp. Đây là điều mình muốn giữ đúng với mô hình doanh nghiệp.
 
-```
-Apply complete! Resources: 47 added, 0 changed, 0 destroyed.
+::item 2. VPC endpoints cho private nodes
 
-Outputs:
-cluster_name = "eks-outbound-proxy"
-proxy_eips   = ["96.0.6.15", "96.0.4.253"]
-```
+App nodes nằm private subnet nên cần VPC endpoints để bootstrap EKS, pull image từ ECR và ghi log mà không cần NAT Gateway.
 
-### 2. EIP cho Local Zone
+```hcl
+locals {
+  interface_vpc_endpoints = {
+    ec2     = "com.amazonaws.${var.region}.ec2"
+    ecr_api = "com.amazonaws.${var.region}.ecr.api"
+    ecr_dkr = "com.amazonaws.${var.region}.ecr.dkr"
+    logs    = "com.amazonaws.${var.region}.logs"
+    sts     = "com.amazonaws.${var.region}.sts"
+  }
+}
 
-EIP mặc định allocate ở Region Sydney — **không gắn được** vào instance ở Local Zone (khác network border group). Phải allocate riêng:
+resource "aws_vpc_endpoint" "interface" {
+  for_each            = local.interface_vpc_endpoints
+  vpc_id              = aws_vpc.main.id
+  service_name        = each.value
+  vpc_endpoint_type   = "Interface"
+  private_dns_enabled = true
+}
 
-```bash
-aws ec2 allocate-address \
-  --domain vpc \
-  --network-border-group ap-southeast-2-per-1 \
-  --region ap-southeast-2
-```
-
-```json
-{
-    "NetworkBorderGroup": "ap-southeast-2-per-1",
-    "PublicIp": "96.0.6.15"
+resource "aws_vpc_endpoint" "s3" {
+  vpc_id            = aws_vpc.main.id
+  service_name      = "com.amazonaws.${var.region}.s3"
+  vpc_endpoint_type = "Gateway"
+  route_table_ids   = [aws_route_table.app.id]
 }
 ```
 
-### 3. Lambda auto-assign EIP khi node scale
+Đây là phần giúp app node private vẫn chạy được mà không cần mở internet trực tiếp.
 
-```python
-def handler(event, context):
-    state       = event['detail']['state']
-    instance_id = event['detail']['instance-id']
+::item 3. EKS node groups
 
-    if state == 'running':
-        tags = get_instance_tags(instance_id)
-        if tags.get('proxy-node') != 'true':
-            return
-        eni_id   = get_primary_eni(instance_id)
-        alloc_id = find_free_eip()
-        ec2.associate_address(AllocationId=alloc_id, NetworkInterfaceId=eni_id)
+Tách EKS worker nodes thành hai nhóm rõ vai trò:
 
-    elif state == 'terminated':
-        ec2.disassociate_address(...)
+```hcl
+eks_managed_node_groups = {
+  app_nodes = {
+    subnet_ids     = [aws_subnet.app.id]
+    instance_types = ["t3.medium"]
+    min_size       = 2
+    desired_size   = 2
+
+    labels = {
+      node-role = "app-node"
+    }
+  }
+
+  proxy_nodes = {
+    subnet_ids     = [aws_subnet.proxy.id]
+    instance_types = ["t3.medium"]
+    min_size       = 2
+    desired_size   = 2
+
+    labels = {
+      node-role = "proxy-node"
+    }
+
+    taints = [{
+      key    = "proxy-only"
+      value  = "true"
+      effect = "NO_SCHEDULE"
+    }]
+  }
+}
 ```
 
-EventBridge trigger khi EC2 state thay đổi. Partner chỉ cần whitelist danh sách EIP một lần — kể cả khi cluster scale.
+App workloads chỉ chạy trên `app-node`. Squid chỉ chạy trên `proxy-node`.
 
-### 4. Squid qua Helm
+Node security group cũng cần cho phép traffic nội bộ tới Squid port:
 
-```bash
-helm install squid-proxy \
-  ./helm/squid-proxy \
-  -n squid \
-  --create-namespace
+```hcl
+node_security_group_additional_rules = {
+  ingress_squid_from_vpc = {
+    protocol    = "tcp"
+    from_port   = 3128
+    to_port     = 3128
+    type        = "ingress"
+    cidr_blocks = [var.vpc_cidr]
+  }
+}
 ```
 
-```
-STATUS: deployed  REVISION: 1
+::item 4. Elastic IP cho proxy nodes
+
+Mỗi proxy node cần một Elastic IP cố định để partner whitelist. EIP phải được cấp đúng network border group của Local Zone:
+
+```hcl
+resource "aws_eip" "proxy_worker" {
+  count                = 2
+  domain               = "vpc"
+  network_border_group = "ap-southeast-2-per-1"
+
+  tags = {
+    Role = "squid-outbound"
+  }
+}
 ```
 
-```bash
-kubectl get pods -n squid -o wide
+Nếu dùng EIP mặc định ở parent region, EC2 trong Local Zone sẽ không associate được EIP.
+
+::item 5. Auto-assign EIP cho proxy nodes
+
+EIP được reserve trước, nhưng node group có thể recreate EC2. Lambda sẽ gắn EIP còn trống vào proxy node khi instance chuyển sang `running`.
+
+```hcl
+resource "aws_lambda_function" "eip_manager" {
+  function_name = "${var.cluster_name}-eip-manager"
+
+  environment {
+    variables = {
+      EIP_ALLOCATION_IDS = join(",", aws_eip.proxy_worker[*].allocation_id)
+    }
+  }
+}
+
+resource "aws_cloudwatch_event_rule" "ec2_state_change" {
+  event_pattern = jsonencode({
+    source      = ["aws.ec2"]
+    detail-type = ["EC2 Instance State-change Notification"]
+    detail      = { state = ["running", "terminated"] }
+  })
+}
 ```
 
-```
-NAME                READY   STATUS    NODE
-squid-proxy-spcm4   1/1     Running   ip-10-0-40-168...
-squid-proxy-k9x2p   1/1     Running   ip-10-0-40-193...
+Lambda chỉ xử lý instance có tag `proxy-node=true`, tránh gắn EIP nhầm sang app node.
+
+::item 6. Squid DaemonSet và ClusterIP service
+
+Squid được deploy bằng Helm dưới dạng DaemonSet:
+
+```yaml
+hostNetwork: true
+dnsPolicy: ClusterFirstWithHostNet
+
+ports:
+  - containerPort: 3128
+    hostPort: 3128
+
+nodeSelector:
+  node-role: proxy-node
+
+tolerations:
+  - key: proxy-only
+    operator: Equal
+    value: "true"
+    effect: NoSchedule
+
+service:
+  type: ClusterIP
+  port: 3128
 ```
 
-Thêm domain mới chỉ cần một lệnh:
+`hostNetwork` và `hostPort` là điểm quan trọng: Squid dùng network stack của node, nên outbound traffic đi ra bằng EIP của proxy node.
 
-```bash
-helm upgrade squid-proxy ./helm/squid-proxy \
-  --set "squid.allowedDomains[3]=.newpartner.vn" \
-  -n squid
+::item 7. Domain whitelist bằng Terraform
+
+Trong lab này mình chỉ whitelist `ifconfig.me` để test source IP. Khi chạy thật, chỉ cần thêm domain partner vào biến này.
+
+```hcl
+variable "partner_domains" {
+  type    = list(string)
+  default = ["ifconfig.me"]
+}
 ```
+
+Helm chart sẽ render list này thành Squid ACL. `google.com` không nằm trong whitelist nên Squid trả `403`.
+
+::item 8. App workload dùng proxy
+
+App chỉ cần cấu hình proxy env:
+
+```yaml
+env:
+  - name: HTTP_PROXY
+    value: http://squid-proxy.squid.svc.cluster.local:3128
+  - name: HTTPS_PROXY
+    value: http://squid-proxy.squid.svc.cluster.local:3128
+  - name: NO_PROXY
+    value: localhost,127.0.0.1,10.0.0.0/8,.cluster.local,.svc
+```
+
+Trong lab, mình dùng pod `curl-test` chạy trên app node private để kiểm tra flow.
+:::
 
 ---
 
-## Verify
+## Test
 
-```bash
-kubectl run curl-test --image=curlimages/curl --restart=Never -- sleep 3600
+:::debug-accordion
+::item 1. Pod placement: app private, Squid public proxy
 
-kubectl exec -it curl-test -- \
-  curl -x http://squid-proxy.squid.svc.cluster.local:3128 http://ifconfig.me
-```
+![Node placement](../../assets/posts/squid-outbound-proxy-eks-local-zone/01-node-placement.png)
 
-```
-96.0.6.15
-```
+`curl-test` chạy trên app node `10.0.10.246` và không có external IP. Hai Squid pods chạy trên proxy nodes `10.0.40.46` và `10.0.40.90`, mỗi node có một EIP riêng.
 
-✅ Source IP chính xác là EIP của proxy node.
+::item 2. App pod không có internet trực tiếp, nhưng đi được qua Squid
 
-```bash
-kubectl exec -it curl-test -- \
-  curl -x http://squid-proxy.squid.svc.cluster.local:3128 http://google.com
-```
+![Egress through Squid](../../assets/posts/squid-outbound-proxy-eks-local-zone/02-egress-through-proxy.png)
 
-```
-Access Denied — ERR_ACCESS_DENIED
-```
+Direct curl từ app pod bị timeout. Khi thêm `-x http://squid-proxy.squid.svc.cluster.local:3128`, request ra ngoài thành công và source IP là EIP của proxy node.
 
-✅ Domain không trong whitelist bị block.
+::item 3. Domain ngoài whitelist bị Squid ACL chặn
 
----
+![ACL denied domain](../../assets/posts/squid-outbound-proxy-eks-local-zone/03-acl-denied-domain.png)
 
-## Lỗi thực tế gặp phải
+`google.com` không nằm trong whitelist nên Squid trả `403`. Đây là expected behavior, không phải lỗi network.
 
-### Lỗi 1: EIP không gắn được vào Local Zone
+::item 4. Log xác nhận traffic đi qua Squid
 
-```
-OperationNotPermitted: Cannot associate addresses across network border groups
-```
+![Filtered Squid logs](../../assets/posts/squid-outbound-proxy-eks-local-zone/04-squid-filtered-logs.png)
 
-EIP allocate ở `ap-southeast-2` không gắn được vào instance ở `ap-southeast-2-per-1a`.
-
-**Fix:** Allocate EIP với đúng `--network-border-group ap-southeast-2-per-1`.
+Log cho thấy app pod `10.0.10.145` gọi `ifconfig.me` được `200`, còn `google.com` bị `TCP_DENIED`. Đây là bằng chứng rõ nhất cho flow `private app pod -> Squid -> Internet`.
+:::
 
 ---
 
-### Lỗi 2: NLB không support
-
-```
-ValidationError: You cannot have any Local Zone subnets
-for load balancers of type 'network'
-```
-
-**Fix:** Đổi service type sang `ClusterIP`. App pods dùng DNS nội bộ K8s:
-`http://squid-proxy.squid.svc.cluster.local:3128`
-
----
-
-### Lỗi 3: Node không join được cluster
-
-```
-NodeCreationFailure: Instances failed to join the kubernetes cluster
-```
-
-App nodes đặt trong private subnet không có route ra internet lúc bootstrap.
-
-**Fix:** Đặt app nodes trong public subnet. Traffic pod vẫn đi qua Squid nhờ `HTTP_PROXY` — vị trí node không ảnh hưởng đến routing của pod.
-
----
-
-### Lỗi 4: map_public_ip_on_launch
-
-```
-Ec2SubnetInvalidConfiguration: does not automatically assign public IP addresses
-```
-
-**Fix:** Bật `map_public_ip_on_launch = true` trên subnet — EIP gắn đè lên sau bởi Lambda.
-
----
-
-### Lỗi 5: Helm provider không authenticate
-
-```
-Kubernetes cluster unreachable: the server has asked for the client to provide credentials
-```
-
-**Fix:** Thêm `--profile` và `--region` vào `aws eks get-token` trong Terraform provider config.
-
----
-
-## Rút ra
-
-Local Zone có nhiều quirk mà documentation không nói rõ:
-
-**EIP border group:** Thứ dễ bỏ qua nhất. EIP và instance phải cùng network border group mới gắn được — EIP của Region không dùng được cho Local Zone.
-
-**Service limitations:** Check availability trước khi design. NAT Gateway, NLB đều không có — phải tìm cách khác.
-
-**Troubleshooting:** Mỗi lỗi đều có lý do rõ ràng — đọc kỹ error message thường là đủ để biết hướng fix.
-
----
-
-*Source code: [github.com/toannd021104/traefik-outbound-proxy](https://github.com/toannd021104/traefik-outbound-proxy)*
+*Source code: [github.com/toannd021104/squid-outbound-proxy](https://github.com/toannd021104/squid-outbound-proxy)*
