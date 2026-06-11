@@ -6,7 +6,7 @@ excerpt: "Mở đầu series AWS Certified DevOps Engineer Professional DOP-C02 
 category: "AWS DOP-C02"
 date: "Jun 11, 2026"
 readTime: "8 min read"
-image: "security.jpg"
+image: "dvp-c02.png"
 summary:
   - "IAM identity là lớp nền để kiểm soát ai hoặc cái gì được phép gọi AWS API"
   - "IAM User, Group và Role khác nhau ở credential, cách cấp quyền và use case vận hành"
