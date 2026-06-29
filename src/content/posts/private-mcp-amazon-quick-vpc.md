@@ -6,7 +6,7 @@ excerpt: "Cho trợ lý AI Amazon Quick gọi được một MCP server nằm ho
 category: "AWS"
 date: "Jun 28, 2026"
 readTime: "10 min read"
-image: "security.jpg"
+image: "private-mcp-architecture.jpg"
 summary:
   - "Amazon Quick gọi MCP server private qua Quick VPC connection, traffic không đi qua public internet"
   - "Cốt lõi là public cert + private DNS: chứng chỉ công khai để TLS hợp lệ, hostname chỉ phân giải trong VPC"
@@ -48,6 +48,8 @@ Kết quả: TLS vẫn hợp lệ như một dịch vụ public bình thường,
 ---
 
 ## Kiến trúc tổng thể
+
+![Kiến trúc Private MCP với Amazon Quick VPC connection](../../assets/posts/private-mcp-amazon-quick-vpc/architecture.jpg)
 
 ```text
 User hỏi Amazon Quick
