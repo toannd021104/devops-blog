@@ -164,6 +164,16 @@ Từ câu hỏi tới root cause trong vài giây, và dữ liệu trace chưa t
 
 ---
 
+## Source code
+
+Mã nguồn MCP server (FastAPI) dùng trong bài, gồm các tool query Jaeger và phần xác thực service-to-service OAuth tùy chọn, có ở GitHub:
+
+- [github.com/toannd021104/jaeger-mcp](https://github.com/toannd021104/jaeger-mcp)
+
+Server expose `GET /health` cho ALB target group và `POST /mcp` (JSON-RPC 2.0) cho `initialize`, `tools/list`, `tools/call`. Input schema của tool dùng JSON Schema Draft 7 đúng yêu cầu của Amazon Quick lúc publish connector.
+
+---
+
 ## Vì sao chọn cách này
 
 So với một private MCP target trên AgentCore Gateway:
@@ -183,3 +193,4 @@ Tài liệu AWS nên đọc thêm:
 - [Amazon Quick permissions](https://docs.aws.amazon.com/quick/latest/userguide/permissions.html)
 - [Route 53 Resolver inbound endpoints](https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/resolver-getting-started.html)
 - [Working with private hosted zones](https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/hosted-zones-private.html)
+- [Source code: jaeger-mcp](https://github.com/toannd021104/jaeger-mcp)
