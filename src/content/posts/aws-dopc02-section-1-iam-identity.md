@@ -26,7 +26,9 @@ Trong phần IAM, bài đầu tiên nên bắt đầu từ **Identity**. Trướ
 - **IAM Group**
 - **IAM Role**
 
-Nghe đơn giản, nhưng rất nhiều thiết kế AWS bị yếu bảo mật chỉ vì dùng sai identity. Ví dụ: hardcode access key của IAM User vào CI/CD, để EC2 dùng static credential thay vì instance profile, hoặc tạo user riêng cho từng service trong khi workload đáng lẽ nên dùng role.
+![IAM Identity overview](../../assets/posts/aws-dopc02/section-1-iam-identity/iam-identity.png)
+
+Nghe đơn giản, nhưng rất nhiều thiết kế AWS bị yếu bảo mật chỉ vì dùng sai identity. Ví dụ: **hardcode access key** của IAM User vào CI/CD, để EC2 dùng **static credential** thay vì **instance profile**, hoặc tạo user riêng cho từng service trong khi workload đáng lẽ nên dùng role.
 
 ---
 
@@ -62,9 +64,9 @@ Tất cả các case trên đều cần IAM identity. Điểm khác nhau nằm �
 IAM User có thể có hai kiểu access:
 
 - **Console access**: username, password và MFA
-- **Programmatic access**: access key ID và secret access key
+- **Programmatic access**: **access key** ID và secret **access key**
 
-Điểm quan trọng nhất của IAM User là credential thường là **long-term credentials**. Access key của user không tự hết hạn sau vài phút hay vài giờ. Nó tồn tại cho đến khi bị deactivate, delete hoặc rotate.
+Điểm quan trọng nhất của IAM User là credential thường là **long-term credentials**. **Access key** của user không tự hết hạn sau vài phút hay vài giờ. Nó tồn tại cho đến khi bị deactivate, delete hoặc rotate.
 
 Đây là lý do IAM User cần được dùng rất thận trọng.
 
@@ -87,13 +89,13 @@ aws s3 ls --profile devops-admin
 
 Về mặt vận hành, IAM User dễ dùng nhưng cũng dễ tạo rủi ro:
 
-- Access key bị commit vào Git.
+- **Access key** bị commit vào Git.
 - Key nằm trong biến môi trường của laptop hoặc CI/CD quá lâu.
-- Không có rotation định kỳ.
+- Không có **rotation** định kỳ.
 - User có quyền quá rộng vì gắn trực tiếp `AdministratorAccess`.
 - Không bật MFA cho console user.
 
-Với DOP-C02, khi đề bài nói đến workload chạy trên AWS như EC2, Lambda, ECS, CodeBuild hoặc GitHub Actions OIDC, bạn nên nghĩ ngay đến **IAM Role**, không phải IAM User access key.
+Với DOP-C02, khi đề bài nói đến workload chạy trên AWS như EC2, Lambda, ECS, CodeBuild hoặc GitHub Actions **OIDC**, bạn nên nghĩ ngay đến **IAM Role**, không phải IAM User **access key**.
 
 ---
 
@@ -129,7 +131,7 @@ Những điểm cần nhớ:
 - Group không thể chứa group khác.
 - Một IAM User có thể thuộc nhiều group.
 - Group không có password.
-- Group không có access key.
+- Group không có **access key**.
 - Group không thể login vào AWS Console.
 - Group không thể assume role.
 
@@ -155,7 +157,7 @@ SecurityAudit
 - IAM Access Analyzer read
 ```
 
-Trong môi trường enterprise, IAM User và Group thường dần được thay bằng **AWS IAM Identity Center** hoặc federation từ IdP như Okta, Entra ID, Google Workspace. Nhưng trong bài thi, bạn vẫn phải hiểu Group vì nó là thành phần IAM nền tảng.
+Trong môi trường enterprise, IAM User và Group thường dần được thay bằng **AWS IAM Identity Center** hoặc **federation** từ IdP như Okta, Entra ID, Google Workspace. Nhưng trong bài thi, bạn vẫn phải hiểu Group vì nó là thành phần IAM nền tảng.
 
 ---
 
@@ -187,7 +189,7 @@ Permission policy:
 Role được phép đọc object trong S3 bucket app-config
 ```
 
-Khi EC2 instance được gắn role thông qua instance profile, application bên trong EC2 có thể dùng AWS SDK để gọi S3 mà không cần hardcode access key.
+Khi EC2 instance được gắn role thông qua **instance profile**, application bên trong EC2 có thể dùng AWS SDK để gọi S3 mà không cần **hardcode access key**.
 
 Luồng thực tế:
 
@@ -275,7 +277,7 @@ production account
 - Audit account có quyền read-only trên các workload account.
 - Shared services account truy cập resource có kiểm soát.
 
-Cross-account role cần trust policy rõ ràng. Không nên trust nguyên một account nếu có thể giới hạn thêm bằng condition như external ID, principal ARN hoặc organization ID.
+Cross-account role cần **trust policy** rõ ràng. Không nên trust nguyên một account nếu có thể giới hạn thêm bằng condition như external ID, principal ARN hoặc organization ID.
 
 ### Federated Role
 
@@ -297,7 +299,7 @@ Workflow assume role trong AWS
 Không cần lưu AWS access key trong GitHub secrets
 ```
 
-Đây là hướng hiện đại hơn so với tạo IAM User access key cho automation.
+Đây là hướng hiện đại hơn so với tạo IAM User **access key** cho automation.
 
 ---
 
@@ -351,11 +353,11 @@ Nếu app trong container gọi AWS API mà bị `AccessDenied`, hãy kiểm tra
 
 ## So sánh nhanh User, Group và Role
 
-| Identity | Có credential riêng? | Long-term credential? | Assume được? | Use case chính |
-|---|---:|---:|---:|---|
-| IAM User | Có | Có | Không | Human user, legacy script, break-glass user |
-| IAM Group | Không | Không | Không | Gom permission cho nhiều IAM User |
-| IAM Role | Có, nhưng là temporary credentials từ STS | Không | Có | AWS service, workload, cross-account, federation |
+| Identity  |                          Có credential riêng? | Long-term credential? | Assume được? | Use case chính                                           |
+| --------- | --------------------------------------------: | --------------------: | -----------: | -------------------------------------------------------- |
+| IAM User  |                                            Có |                    Có |        Không | Human user, legacy script, break-glass user              |
+| IAM Group |                                         Không |                 Không |        Không | Gom permission cho nhiều IAM User                        |
+| IAM Role  | Có, nhưng là **temporary credentials** từ STS |                 Không |           Có | AWS service, workload, **cross-account**, **federation** |
 
 Nếu phải nhớ một câu ngắn:
 
@@ -371,8 +373,8 @@ Với IAM User:
 
 - Bật MFA cho user có console access.
 - Không dùng root user cho công việc hằng ngày.
-- Rotate access key nếu bắt buộc phải dùng.
-- Xóa access key không dùng.
+- Rotate **access key** nếu bắt buộc phải dùng.
+- Xóa **access key** không dùng.
 - Tránh gắn quyền trực tiếp quá rộng cho user.
 
 Với IAM Group:
@@ -384,11 +386,11 @@ Với IAM Group:
 Với IAM Role:
 
 - Ưu tiên role cho workload chạy trên AWS.
-- Dùng least privilege cho permission policy.
-- Giới hạn trust policy càng cụ thể càng tốt.
-- Dùng condition trong trust policy khi cần.
-- Với cross-account, cân nhắc external ID hoặc organization condition.
-- Với CI/CD hiện đại, ưu tiên OIDC federation thay vì long-term access key.
+- Dùng **least privilege** cho **permission policy**.
+- Giới hạn **trust policy** càng cụ thể càng tốt.
+- Dùng condition trong **trust policy** khi cần.
+- Với **cross-account**, cân nhắc external ID hoặc organization condition.
+- Với CI/CD hiện đại, ưu tiên **OIDC** **federation** thay vì long-term **access key**.
 
 ---
 
@@ -418,7 +420,7 @@ Gom nhiều user theo team
 Một user thuộc nhiều nhóm permission
 ```
 
-Nhưng trong môi trường production hiện đại, nếu có lựa chọn giữa static access key và role/federation, đa số tình huống bảo mật tốt hơn sẽ nghiêng về **role hoặc federated access**.
+Nhưng trong môi trường production hiện đại, nếu có lựa chọn giữa static **access key** và role/**federation**, đa số tình huống bảo mật tốt hơn sẽ nghiêng về **role hoặc federated access**.
 
 ---
 
@@ -428,9 +430,9 @@ IAM Identity là nền móng của bảo mật AWS. Nếu chọn sai identity, c
 
 Tóm tắt lại:
 
-- **IAM User**: danh tính cố định, có long-term credentials.
+- **IAM User**: danh tính cố định, có **long-term credentials**.
 - **IAM Group**: công cụ gom permission cho nhiều IAM User.
-- **IAM Role**: identity tạm thời, được assume qua STS, phù hợp cho workload và cross-account.
+- **IAM Role**: identity tạm thời, được assume qua STS, phù hợp cho workload và **cross-account**.
 
 Trong bài tiếp theo của series, mình sẽ đi tiếp vào **IAM Policy Types**: identity-based policy, resource-based policy, permission boundary, session policy, SCP và ACL khác nhau như thế nào.
 
