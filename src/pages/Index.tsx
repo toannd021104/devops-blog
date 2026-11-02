@@ -76,12 +76,12 @@ const Index = () => {
           <div className="mb-12 space-y-6">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
               <div>
-              <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-primary">
-                // writing
-              </span>
-              <h2 className="mt-2 font-display text-3xl font-bold text-foreground md:text-4xl">
-                Recent posts
-              </h2>
+                <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-primary">
+                // bài viết
+                </span>
+                <h2 className="mt-2 font-display text-3xl font-bold text-foreground md:text-4xl">
+                  Bài viết
+                </h2>
               </div>
 
               <div className="grid gap-3 sm:grid-cols-[minmax(0,18rem)_minmax(0,16rem)] lg:w-auto lg:min-w-[34rem]">
@@ -129,7 +129,7 @@ const Index = () => {
                 href="#"
                 className="hidden font-mono text-xs text-muted-foreground transition-smooth hover:text-primary sm:inline"
               >
-                all posts →
+                tất cả bài viết →
               </a>
             </div>
           </div>

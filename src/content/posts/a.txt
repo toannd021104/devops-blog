@@ -1,0 +1,1151 @@
+Sample Application
+Throughout this workshop, you'll build and evolve a customer service agent for AnyCompany Shop, a fictional online retail store that sells electronics and accessories.
+
+The scenario
+AnyCompany Shop needs an AI-powered agent that can handle common customer inquiries without routing to a human. Customers chat with the agent through a web UI and expect it to:
+
+Look up order status, tracking numbers, and delivery estimates
+Answer product and returns questions
+Do light computation (for example, "total up my two orders")
+You'll start with a single agent that can only look up orders, then layer on capabilities lab by lab until you have an observable, tool-using agent with sandboxed execution and per-persona authorization.
+
+Data model
+The agent's data lives in a DynamoDB table that it reads through tools.
+
+The table holds about 500 orders spanning a year of activity, with a mix of statuses, regions, payment methods, and channels. That's enough to analyze, not just look up. Five orders are seeded with deterministic data, one per status, so every learner sees the same results in the examples below and throughout the labs:
+
+Order ID	Customer	Item	Status
+ORD-1001	Jane Doe	Laptop Pro 15 ($1,299.99)	Shipped
+ORD-1002	John Smith	Wireless Mouse + 2× USB-C Hub ($129.97)	Delivered
+ORD-1003	Alice Johnson	Noise Cancelling Headphones ($249.99)	Processing
+ORD-1004	Bob Williams	4K Monitor 27-inch ($399.99)	Cancelled
+ORD-1005	Carol Martinez	Mechanical Keyboard + Wireless Earbuds ($149.98)	Returned
+The agent reads orders from DynamoDB via the lookup_order tool. The Agent tools with MCP lab moves that lookup behind an MCP server, and the Agents using a sandbox lab uses a fiscal-period index over the same table to run bulk analysis in an isolated microVM.
+
+Agent capabilities by lab
+The agent gains one new capability per lab. Each row builds on the previous, and later labs retain everything from earlier ones:
+
+Lab	New capability	How it works
+Building your first agent	Core agent loop + lookup_order	LLM (Bedrock, via the Envoy AI Gateway) decides when to call the tool
+Observability with Langfuse	Tracing	Every LLM call, tool invocation, and gateway span is captured as an OTel span
+Agent tools with MCP	Dynamic tools	An MCP server serves the order tools; agentgateway routes to it
+Securing the agents	Per-tool authorization	agentgateway enforces which tools each persona can call
+Agents using a sandbox	Isolated compute	Untrusted analysis runs in a single-use kata microVM, not in the agent pod
+The chat UI
+A Chainlit-based  web UI is pre-deployed on the cluster and fronted by CloudFront with Cognito login. Every message POSTs to the in-cluster customer-agent Service; the labs redeploy that same Service as the agent gains capabilities, so the UI never changes.
+
+A login banner prints the chat UI's URL and the Support Associate login on every new terminal. Reprint them any time with:
+
+echo "Chat UI: $CHAT_UI_URL"
+echo "  Support Associate -> $CHAT_UI_SUPPORT_USERNAME / $CHAT_UI_SUPPORT_PASSWORD"
+
+Chat UI login credentials
+
+Use that URL to open the chat UI in your browser, then sign in as Support Associate. A second persona, Sales Analyst, is introduced later, once the Securing the agents lab gives the two personas distinct roles.
+
+Don't sign in yet if you're only skimming this page: the chat won't answer until you deploy the agent in the Building your first agent lab, and signing in now just gets you an idle chat window. Come back to this URL once that lab tells you to.
+
+Keep this tab open and use it throughout every lab.
+
+
+Building Agents on Amazon EKS
+You'll build a customer service agent for AnyCompany Shop and grow it one capability at a time. Every lab ships its complete end-state under ~/environment/modules/. You read the code, build the container image, and deploy it to the cluster that's already running.
+
+Every model call is served by Amazon Bedrock and reaches it through the Envoy AI Gateway, a proxy running in your cluster. The agent code never speaks to Bedrock directly and never carries Bedrock credentials: it sends an ordinary chat-completions request to the gateway, and the gateway carries the AWS identity the rest of the way. That single control point is what lets you swap models (Nova, Claude) without touching agent code.
+
+Architecture
+![alt text](image-13.png)
+Building Agents platform: a customer reaches the Chainlit UI, which calls the Strands Agent; the agent reaches Amazon Bedrock through the Envoy AI Gateway using Pod Identity and reads the Amazon DynamoDB orders table with lookup_order. Dashed previews show what the later labs add: Langfuse and the OTel Collector for traces in lab 2, agentgateway and an MCP server for tools in labs 3 and 4, and an Agent Sandbox microVM in lab 5
+
+Labs
+#	Lab	What the agent gains
+1	Building your first agent	Core agent loop + lookup_order, wired to Bedrock through the Envoy AI Gateway
+2	Observability with Langfuse	Every LLM call and tool invocation traced, including the gateway's own spans
+3	Agent tools with MCP	Tools served over MCP, routed through agentgateway
+4	Securing the agents	Per-tool authorization at agentgateway, keyed to the signed-in persona
+5	Agents using a sandbox	Write and run analysis code (and render charts) in an isolated microVM
+First, a short look at the AI Gateway the platform team already runs, so the endpoint the agent talks to is not a black box. Then lab 1: an LLM-powered loop with a single tool. Each lab layers on one new capability and keeps everything from the ones before it.
+
+The AI Gateway
+At a glance	Details
+Goal	Understand what the platform team already built, and call it yourself before you write an agent against it.
+Time	~10 minutes
+Prerequisites	None
+Every model call in this workshop is served by Amazon Bedrock, and every one of them goes through the Envoy AI Gateway running in your cluster. The platform team set that up before you arrived. Nothing in this lab asks you to deploy it, and no agent exists yet. You are going to call the gateway directly, the way any workload in the cluster would, so that the agent you build in the next lab has an endpoint you already understand.
+
+What is already running
+The gateway runs in the envoy-gateway-system namespace as a Service named ai-gateway, reachable in-cluster at http://ai-gateway.envoy-gateway-system.svc.cluster.local/v1. It is a ClusterIP Service, so it has no address outside the cluster.
+
+kubectl get svc ai-gateway -n envoy-gateway-system
+![alt text](image-14.png)
+Expected output:
+
+NAME         TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)   AGE
+ai-gateway   ClusterIP   10.100.45.12   <none>        80/TCP    2h
+It accepts requests in two wire formats and translates both to Bedrock's Converse API: OpenAI on /v1/chat/completions and Anthropic Messages on /anthropic/v1/messages. Which one you use is a client-library decision, not a platform one. The agents in the next labs use the OpenAI format because the Strands SDK's OpenAIModel speaks it; the coding agent in the last section uses the Anthropic path because Claude Code does.
+
+Why route model traffic through a gateway
+Three reasons, and you can see all of them from the command line in a minute.
+
+The agent holds no AWS credentials. The gateway owns the identity that reaches Bedrock, signing each request with SigV4 using a role granted through EKS Pod Identity . An agent that never holds a credential cannot leak one.
+
+Model names stop being an application concern. Agents ask for claude-sonnet, not us.anthropic.claude-sonnet-4-5-20250929-v1:0. More on this below, because it is the part that changes how you write agent code.
+
+There is one place to see and shape model traffic. Every model call in the cluster crosses this hop, which is where you would attach rate limits, token budgets per team, or usage accounting. This workshop does not configure those, but that single control point is why a platform team puts a gateway here rather than letting each agent dial Bedrock directly.
+
+Compare that to the alternative: without a gateway, every agent calls Bedrock on its own, each with its own AWS credentials, its own hardcoded model ID, and no shared place to see how much any of them are spending. The gateway trades a small amount of latency (one extra network hop) for centralized identity, model naming, and visibility, which is what makes the three points above possible.
+
+Model aliases
+The gateway keeps a table of friendly names and rewrites each to a real Bedrock model id. Print it:
+
+kubectl get aigatewayroute bedrock -n envoy-ai-gateway-system \
+  -o jsonpath='{range .spec.rules[*]}{.matches[0].headers[0].value}{" -> "}{.backendRefs[0].modelNameOverride}{"\n"}{end}'
+
+nova-lite -> us.amazon.nova-2-lite-v1:0
+nova-pro -> us.amazon.nova-pro-v1:0
+nova-micro -> us.amazon.nova-micro-v1:0
+claude-sonnet -> us.anthropic.claude-sonnet-4-5-20250929-v1:0
+claude-haiku -> us.anthropic.claude-haiku-4-5-20251001-v1:0
+
+![alt text](image-15.png)
+The left column is what agent code asks for. The right column is what Bedrock receives.
+
+This is worth more than the keystrokes it saves. A developer writing an agent should not have to know which provider hosts a model, how that provider spells its version, or which region prefix applies. Those are platform decisions, and they change: when the platform team moves claude-sonnet from Sonnet 4.5 to the next release, they edit this table and every agent in the cluster follows. No rebuild, no redeploy, no code review.
+
+Where aliases point in a larger deployment: inference profiles
+Here each alias maps straight to a Bedrock model id. In a production deployment it would more often map to an inference profile , which is a Bedrock resource that stands in front of a model and adds two things worth having.
+
+The first is attribution. A profile can be tagged, and Bedrock reports usage and cost against it, so "which team spent this" becomes a question with an answer. The second is permission granularity: IAM policies can name a specific inference profile, so the gateway's role can be allowed to invoke the profile that belongs to one workload without being allowed to invoke every model in the account.
+
+The alias indirection is what makes that switch invisible. Pointing claude-sonnet at a profile instead of a model id changes one line here and nothing in any agent.
+Call it
+The gateway is ClusterIP, so reach it from a pod. This runs a throwaway curl container, sends one OpenAI-format request, and pipes the response through jq on your machine:
+
+kubectl run gw-test --rm -i --restart=Never --image=curlimages/curl -q -- \
+  curl -sS http://ai-gateway.envoy-gateway-system.svc.cluster.local/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"nova-lite","messages":[{"role":"user","content":"Say hi in 3 words"}]}' | jq
+
+The jq pipe is outside kubectl run on purpose. The curlimages/curl image has no jq binary; -i streams the pod's output back to your shell, where jq is available.
+
+You should get a completion back:
+
+{
+  "id": "82fd433f-ce9b-4d48-8c23-84325b5e5478",
+  "choices": [
+    {
+      "finish_reason": "stop",
+      "index": 0,
+      "message": {
+        "content": "Hello there, friend!",
+        "role": "assistant"
+      }
+    }
+  ],
+  "created": 1786989350,
+  "model": "us.amazon.nova-2-lite-v1:0",
+  "object": "chat.completion",
+  "usage": {
+    "completion_tokens": 6,
+    "prompt_tokens": 9,
+    "total_tokens": 15
+  }
+}
+![alt text](image-16.png)
+Note the model field in the response: you asked for nova-lite and Bedrock answered as us.amazon.nova-2-lite-v1:0. That is the alias rewrite, visible from the outside.
+
+Now the same request against a different model. The model changed from nova-lite to claude-sonnet. Nothing else did:
+
+kubectl run gw-test --rm -i --restart=Never --image=curlimages/curl -q -- \
+  curl -sS http://ai-gateway.envoy-gateway-system.svc.cluster.local/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"claude-sonnet","messages":[{"role":"user","content":"Say hi in 3 words"}]}' | jq
+
+Same endpoint, same request shape, a different provider answering. This is the path every model call in the rest of the workshop takes.
+![alt text](image-17.png)
+In a freshly provisioned account, the first Claude call can come back with an HTTP 403 ("Model access is denied ... required AWS Marketplace actions (aws-marketplace
+Unknown directive
+Line 183: Unknown text directive “ViewSubscriptions”
+, aws-marketplace
+Unknown directive
+Line 183: Unknown text directive “Subscribe”
+) ... try again after 10 minutes"). This is the Bedrock model subscription still propagating, not a problem with your request. Wait a moment and run the same command again; it succeeds once access finishes enabling. The Nova models are unaffected.
+
+About the missing API key
+The agent you build next sets api_key="not-needed". Two separate questions sit behind that.
+
+Does the gateway need a key to reach Bedrock? No. It authenticates with its own AWS identity through Pod Identity, so there is no client key to manage or rotate.
+
+Does the gateway check who is calling it? Not here, and that is worth knowing. Any pod in any namespace can reach that Service URL and spend Bedrock tokens; the only boundary is that the Service is ClusterIP.
+
+What caller authentication looks like in production
+The usual approach is to make each workload prove which workload it is, using credentials Kubernetes already issues.
+
+Every pod can request a projected service account token, a short-lived JWT signed by the cluster, scoped to an audience you choose, for example ai-agents-on-eks-anycompany-shop. The gateway validates that token against the cluster's OIDC issuer and rejects anything without it. Two things follow. Only pods running under an approved service account can call the gateway at all. And because the token names the service account, every call is attributable, so per-agent budgets and rate limits become enforceable rather than aspirational.
+
+There is a further step for user-facing agents. The chat UI in this workshop already carries the signed-in user's Cognito token through to the agent, and the Securing the agents lab uses it to authorize tool calls. The same token can ride to the model gateway, so a model call is attributable to both the workload and the person who asked for it.
+
+You will build exactly this pattern later: the Securing the agents lab applies JWT validation and per-caller authorization to the tool gateway, which is the same mechanism described here pointed at a different hop.
+What you learned
+The platform team runs an Envoy AI Gateway in front of Amazon Bedrock, and it accepts both OpenAI and Anthropic request formats.
+Model aliases keep provider model names out of agent code, so the platform can change models, or move to inference profiles, without touching an agent.
+The gateway holds the AWS identity so agents never carry Bedrock credentials, and today it does not authenticate its callers, which is the gap a projected service account token would close.
+What's next
+
+
+
+
+
+Building your first agent
+At a glance	Details
+Goal	Build and deploy a customer service agent that answers order questions by calling a DynamoDB-backed tool, reasoning with a model in Amazon Bedrock.
+Time	~15 minutes
+Prerequisites	The AI Gateway page
+In this lab you deploy an agent for the fictional online retailer AnyCompany Shop, built with the Strands Agents SDK . Its model calls go to Amazon Bedrock through the Envoy AI Gateway you just called by hand.
+
+Why a customer service agent?
+One agent, evolving across every lab.
+
+Lab	How the agent benefits
+Building your first agent (this lab)	Core loop: receives a query, reasons, calls a tool, responds
+Observability with Langfuse	Trace every LLM call and tool invocation to debug slow or wrong responses
+Agent tools with MCP	Move tools behind an MCP server the agent discovers at runtime
+Securing the agents	Enforce per-tool access by the signed-in persona
+Agents using a sandbox	Offload untrusted analysis to an isolated microVM
+You start simple: an LLM-powered conversational loop with one tool. Each lab layers on a new capability.
+
+Architecture
+![alt text](image-18.png)
+First agent flow: customer query through the Chainlit UI to the Strands Agent, OpenAI wire format to the Envoy AI Gateway, Converse API with SigV4 Pod Identity to Bedrock, and the in-process lookup_order tool reading DynamoDB
+
+The agent never calls Bedrock directly and holds no Bedrock credentials. It sends an ordinary chat-completions request to the gateway, which owns the AWS identity (SigV4 via EKS Pod Identity) and translates to Bedrock's Converse API. Swapping models (Nova to Claude) is a one-line MODEL_ID change, not a code change.
+
+What is the Strands SDK?
+An open-source Python SDK for building agents. The LLM decides which tools to call and in what order.
+
+How this works: the four Strands concepts you'll meet in the code
+Four concepts carry the whole SDK, and you meet all of them in Step 1:
+
+Agent: the loop that sends messages to the LLM and executes tool calls
+Model: any endpoint that speaks the chat-completions API. Here, the Envoy AI Gateway in front of Bedrock
+Tools: Python functions decorated with @tool that the agent can invoke
+System prompt: instructions that shape the agent's behavior
+Step 1: Code walkthrough
+The full source is under ~/environment/modules/200-strands-agents/customer-agent.
+
+cd ~/environment/modules/200-strands-agents/customer-agent
+
+There are seven files. agent.py and tools.py are the core teaching files: the agent logic and the tool. The rest is infrastructure. server.py is a thin FastAPI wrapper that exposes the agent over HTTP for the chat UI; Dockerfile and requirements.txt handle containerization; k8s.yaml is the Kubernetes Deployment and Service; and test_server_events.py holds the server's unit tests.
+
+
+agent.py, the model client
+
+tools.py, the @tool decorator
+
+server.py, the HTTP wrapper
+
+Dockerfile, how the agent ships
+model_base_url = os.environ.get("MODEL_BASE_URL", "http://localhost:4000/v1")
+
+model = OpenAIModel(
+    client_args={
+        "base_url": model_base_url,
+        "api_key": os.environ.get("MODEL_API_KEY", "not-needed"),
+    },
+    model_id=os.environ.get("MODEL_ID", "nova-lite"),
+    params={"max_tokens": 1024, "temperature": 0.3},
+)
+Every value comes from the environment, so the same image runs anywhere:
+
+base_url: MODEL_BASE_URL points at the Envoy AI Gateway (http://ai-gateway.envoy-gateway-system.svc.cluster.local/v1), supplied by the agent-config ConfigMap. This is the endpoint you called by hand on the previous page.
+api_key="not-needed": the gateway authenticates to Bedrock with its own identity via Pod Identity, so there is no client key to manage. It also does not check its callers, which the AI Gateway page covers.
+model_id="nova-lite": an alias the gateway rewrites to a real Bedrock model id. Change it to claude-sonnet and the agent is on Claude with no other edit.
+Step 2: Deploy to EKS
+k8s.yaml is a Deployment plus a ClusterIP Service on port 8080. Two wiring details do the heavy lifting:
+
+serviceAccountName: agent gives DynamoDB access via Pod Identity (for lookup_order)
+envFrom: agent-config is the ConfigMap that lands MODEL_BASE_URL, MODEL_ID, and ORDERS_TABLE in the container automatically
+The Deployment, and what the ConfigMap actually contains
+The parts that matter, from k8s.yaml:
+
+spec:
+  serviceAccountName: agent
+  containers:
+    - name: customer-agent
+      image: ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/customer-agent:strands
+      imagePullPolicy: Always
+      ports:
+        - containerPort: 8080
+      envFrom:
+        - configMapRef:
+            name: agent-config
+agent-config is created by the platform's Terraform, not by this lab, and it is shared by every agent in the workshop. Read it yourself:
+
+kubectl get configmap agent-config -o yaml
+
+The keys this lab's agent uses:
+
+Key	Value	Used for
+MODEL_BASE_URL	http://ai-gateway.envoy-gateway-system.svc.cluster.local/v1	the gateway endpoint
+MODEL_ID	nova-lite	the model alias
+MODEL_API_KEY	not-needed	the gateway takes no client key
+ORDERS_TABLE	the DynamoDB table name	lookup_order
+AWS_REGION	the event's region	the boto3 client
+Not sure which region that is? Check it directly:
+
+kubectl get configmap agent-config -o jsonpath='{.data.AWS_REGION}'
+
+The rest (MILVUS_URI, the LANGFUSE_* and OTEL_* keys) belong to later labs. Because envFrom imports the whole ConfigMap, this pod receives them all and ignores what it does not read. The MCP lab narrows that down to named keys, once it matters which pod gets what.
+
+The image ref uses ${ACCOUNT_ID} and ${AWS_REGION} placeholders, so render it with envsubst before applying:
+
+cd ~/environment/modules/200-strands-agents/customer-agent
+envsubst < k8s.yaml | kubectl apply -f -
+kubectl rollout status deployment/customer-agent --timeout=120s
+![alt text](image-19.png)
+If the 120s timeout expires, the Deployment didn't reach Ready in time. Check kubectl get pods -l app=customer-agent for the pod's status, then kubectl describe pod <pod-name> for the reason: a common cause is the image still being pushed by the provisioning CodeBuild job, in which case retrying the rollout after a minute resolves it. kubectl logs deploy/customer-agent shows a stack trace if the container started but crashed, most often a missing ConfigMap key or a Pod Identity association that hasn't propagated yet.
+
+Confirm it came up and picked up the gateway endpoint:
+
+kubectl get pods -l app=customer-agent
+kubectl exec deploy/customer-agent -- env | grep -E '^(MODEL_BASE_URL|MODEL_ID|ORDERS_TABLE)='
+
+You should see MODEL_BASE_URL pointing at ai-gateway.envoy-gateway-system.svc.cluster.local.
+
+Expected output:
+
+NAME                              READY   STATUS    RESTARTS   AGE
+customer-agent-7d9f8c6b5b-x2k4p   1/1     Running   0          38s
+
+MODEL_BASE_URL=http://ai-gateway.envoy-gateway-system.svc.cluster.local/v1
+MODEL_ID=nova-lite
+ORDERS_TABLE=ai-agents-on-eks-demo-orders
+Step 3: Chat with it
+A login banner prints the Chat UI URL and the Support Associate login on every new terminal. Reprint them here if you need to:
+
+Reprint the Chat UI URL and Support Associate login
+Open the URL from the chat UI banner above, then sign in as Support Associate. (There's a second persona, Sales Analyst, that starts to matter in the Securing the agents lab; nothing in this lab depends on it.) Once you're in, try:
+
+Hi, I ordered a laptop last week and it still hasn't arrived. My order ID is ORD-1001. Can you help?
+
+I want to know the status of the mechanical keyboard from Order ORD-1005.
+
+Can you check on order ORD-99999?
+
+ORD-1001 through ORD-1005 are five fixed orders, one per status, used in the examples throughout the workshop. ORD-1005 is already in Returned status, which is why the prompt asks about its status rather than asking to return it. The last query tests the "order does not exist" path. Good agents fail gracefully.
+
+Customer Agent answering an order-status question in the chat UI
+
+If the agent replies with a friendly "finish this lab's build and deploy step" message, the Deployment isn't ready yet. Recheck Step 2's kubectl rollout status.
+
+What you built
+A Strands agent loop handling customer service conversations
+Model calls served by Amazon Bedrock through the Envoy AI Gateway, which owns the AWS identity, so the agent stays credential-free for model calls
+A lookup_order tool the model calls to fetch real order data from DynamoDB, using Pod Identity for data access
+A long-running HTTP service on EKS that the Cognito-authenticated chat UI talks to
+What's next
+No observability: the agent is a black box right now. See the Observability with Langfuse lab.
+Tools live in the agent: no shared, discoverable tool surface. See the Agent tools with MCP lab.
+No per-persona authorization: every signed-in user can call every tool. See the Securing the agents lab.
+No sandboxing: untrusted computation runs in-process. See the Agents using a sandbox lab.
+Next up: observability. Trace every LLM call and tool invocation, including the gateway's own spans.
+
+Observability with Langfuse
+At a glance	Details
+Goal	Make the agent observable by sending every LLM call and tool call to Langfuse, then read a full trace of one request.
+Time	~15 minutes
+Prerequisites	The Building your first agent lab
+The agent from the first lab is a black box. When a reply is slow or wrong, you cannot see which model call or tool invocation caused it. In this lab you instrument the agent with OpenTelemetry and read the traces in Langfuse, and you confirm that the Envoy AI Gateway adds its own span to the same trace.
+
+The instrumentation is the portable part. The agent emits standard OpenTelemetry spans, so the same code can report to any backend that speaks OTLP. Langfuse is what this workshop points it at.
+
+Two pieces are already running in the cluster: Langfuse itself, and a shared OpenTelemetry (OTel) Collector that every workload exports to. Have a look:
+
+kubectl get pods,svc -n telemetry
+kubectl get pods -n langfuse
+![alt text](image-20.png)
+The Service named agentgateway-traces-collector in the telemetry namespace is the one that matters: it listens for OTLP on port 4318, and it is the address the agent is about to export to. Nothing new gets provisioned in this lab. All you do is deploy a version of the customer agent that emits traces.
+
+Why the tracing backend is separate from the cluster that produces the traces
+Traces are usually collected centrally. One team runs the tracing backend and every other cluster reports into it, because the value of a trace comes from comparing it against everything else. In a production deployment this Langfuse would live on a management cluster, or you would point the collector at Amazon CloudWatch instead, and the agents would not change: they export OTLP to a collector and the collector decides where it goes.
+
+That is also why the collector, not the agent, holds the Langfuse credential. One authenticated egress means one place to rotate a key, and the workloads never see it.
+
+What changes from the first lab
+The agent code is almost identical. Three things are added so traces flow:
+
+A Langfuse client in agent.py that authenticates on startup and flushes spans after each request.
+OpenTelemetry auto-instrumentation in the image. The Dockerfile launches the app with opentelemetry-instrument, which patches httpx and FastAPI with no code change. The inbound request becomes the trace root, and the outbound LLM call carries a W3C traceparent header.
+Export target: the agent-config ConfigMap already sets OTEL_EXPORTER_OTLP_ENDPOINT to the shared collector and LANGFUSE_BASE_URL to the in-cluster Langfuse. The Langfuse API keys come from a separate Kubernetes Secret. The container picks all of it up with no edit.
+How this works: why the gateway span joins the same trace
+The traceparent header is the important part. The Envoy AI Gateway reads it on each request, so its span nests under the agent's trace instead of starting a separate one. That is how you get a single trace showing the agent, its tool call, and the gateway in one place.
+
+The httpx auto-instrumentation adds the header on the outbound LLM call with no code in the agent. Without it, the gateway would start its own trace and you would see two disconnected traces per request instead of one.
+Architecture
+![alt text](image-21.png)
+Observability flow: the FastAPI span roots the trace at the agent, the LLM call carries traceparent to the Envoy AI Gateway whose ChatCompletion span nests under it, and both export to the OTel Collector which is the single authenticated egress to Langfuse
+
+The collector is the single authenticated egress to Langfuse. Both the agent and the gateway export to it, and it forwards to Langfuse with the credential held in one place.
+
+Step 1: Code walkthrough
+The full source is under ~/environment/modules/300-observability-langfuse/customer-agent.
+
+cd ~/environment/modules/300-observability-langfuse/customer-agent
+
+
+agent.py - the Langfuse client
+
+k8s.yaml - where the settings come from
+
+Dockerfile - auto-instrumentation
+
+server.py - flush per request
+from langfuse import get_client
+
+# Config comes from the environment on EKS: see k8s.yaml.
+
+langfuse = get_client()
+if langfuse.auth_check():
+    print("Langfuse connected successfully")
+else:
+    print("WARNING: Langfuse authentication failed - traces will not be captured")
+get_client() reads LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, and LANGFUSE_BASE_URL from the environment, so the code hardcodes nothing. The auth_check() result is printed at startup, which is how you confirm the wiring in Step 2. The rest of agent.py (the model client, the system prompt, the lookup_order tool) is unchanged from the first lab.
+
+Step 2: Deploy the instrumented agent
+The customer-agent image is pre-built with the :langfuse tag, and k8s.yaml already references it. The config and the credentials are both already in the cluster, so no config change is needed. Apply and roll:
+
+cd ~/environment/modules/300-observability-langfuse/customer-agent
+envsubst < k8s.yaml | kubectl apply -f -
+kubectl rollout status deployment/customer-agent --timeout=120s
+![alt text](image-22.png)
+Confirm the new pod picked up the tracing config:
+
+kubectl exec deploy/customer-agent -- env \
+  | grep -E '^(LANGFUSE_BASE_URL|OTEL_EXPORTER_OTLP_ENDPOINT|OTEL_SERVICE_NAME)='
+
+Expected output:
+![alt text](image-23.png)
+LANGFUSE_BASE_URL=http://langfuse-web.langfuse.svc.cluster.local:3000
+OTEL_EXPORTER_OTLP_ENDPOINT=http://agentgateway-traces-collector.telemetry.svc.cluster.local:4318
+OTEL_SERVICE_NAME=customer-agent
+Now confirm the Langfuse client authenticated. The agent runs auth_check() at startup and prints the result, so read its log rather than running anything inside the pod:
+
+kubectl logs deploy/customer-agent | grep Langfuse
+![alt text](image-24.png)
+Langfuse connected successfully
+If you see the warning line instead, the pod started but could not authenticate. Check that the langfuse-keys Secret exists: kubectl get secret langfuse-keys.
+
+Step 3: Generate a trace
+There is nothing to look at until the agent handles a request, so send one first. Open the chat UI (the URL and logins are the same throughout the workshop; reprint them any time):
+
+echo "Chat UI: $CHAT_UI_URL"
+echo "  Support Associate -> $CHAT_UI_SUPPORT_USERNAME / $CHAT_UI_SUPPORT_PASSWORD"
+
+Sign in as Support Associate and send a query that triggers a tool call:
+
+Hi, I ordered a laptop last week and it still hasn't arrived. My order ID is ORD-1001. Can you help?
+
+Once the agent replies, the trace has been exported and is waiting for you.
+
+Step 4: Read the trace in Langfuse
+Print the Langfuse URL and the admin login. Both are in the IDE shell's environment and in the terminal banner:
+
+echo "Langfuse: $LANGFUSE_URL"
+echo "  Email:    $LANGFUSE_USERNAME"
+echo "  Password: $LANGFUSE_PASSWORD"
+
+This is a separate login from the chat UI. Langfuse has its own admin account, so the persona you signed into the chat with does not apply here. Leave the chat UI tab open; you will come back to it.
+
+Open the URL and sign in. Langfuse lands on an organization overview rather than your traces, so click into AnyCompany Shop, then Go to project on the Customer Agent card. Both the organization and the project are pre-created, so they are waiting for you.
+
+Then open Tracing > Traces and click the newest trace. Switch the view from Tree to Timeline, which is how tracing is normally read: each span is a bar, its length is its duration, and nesting shows what waited on what.
+
+You are looking at four things:
+
+POST /chat, the root. This is the inbound FastAPI request, and it is what gives the trace a name. Without it the trace would show up unnamed with orphaned spans underneath.
+The agent's chat generation, carrying the model, the token counts, and the latency.
+The lookup_order tool call, with its input and the DynamoDB result.
+A ChatCompletion span, which is the gateway reporting the same model call from its own side. It sits nested under the agent's outbound POST.
+Langfuse trace tree: the FastAPI root, the agent's chat generation and lookup_order tool call, and the gateway's nested ChatCompletion span
+
+Two details about that last span are worth pausing on, because they are easy to misread:
+
+Its service is envoy-ai-gateway, but its name is ChatCompletion (the OpenInference convention). There is no span called "envoy-ai-gateway", so searching for one will not find it.
+It reports the resolved Bedrock model id, something like us.amazon.nova-..., while the agent's own span shows the alias nova-lite. Seeing both in one trace is seeing the gateway's alias rewrite happen.
+If the ChatCompletion span turns up as its own separate trace instead of nested, the agent did not propagate traceparent: confirm you deployed the :langfuse image in Step 2, since the first lab's :strands image has no auto-instrumentation. Tracing is best-effort, so if a span is missing entirely, send one more message; the first request after a pod starts can miss the export while the collector connection warms up.
+![alt text](image-25.png)
+Send the "order does not exist" query and compare the two traces:
+
+Can you check on order ORD-99999?
+
+The tool span shows the not-found result, and you can see the model choosing to apologize rather than invent an order. That is the kind of behavior the trace makes visible that the chat reply alone hides.
+![alt text](image-26.png)
+What you built
+The same customer agent, now emitting OpenTelemetry traces to Langfuse through the shared OTel Collector.
+Auto-instrumentation in the image, so tracing needs no code in the agent logic beyond a Langfuse client and a per-request flush.
+A single trace per request that spans the agent, its tool call, and the Envoy AI Gateway, because the agent propagates W3C traceparent and the gateway nests its span under it.
+Langfuse credentials in a Secret, kept out of the ConfigMap that carries the pod's ordinary configuration.
+How Langfuse is exposed
+Zooming out: the Dashboards view
+Everything so far has been one request at a time. Dashboards is the other half of Langfuse: the same spans you just read, rolled up across every request.
+
+Find it in the sidebar as a top-level item directly under Home, above the grouped Observability, Prompt Management, and Evaluation sections. It is easy to skim past, because it is the one nav entry that has no section header above it.
+
+Your project ships with four dashboards, all authored by Langfuse (the 🪢 mark in the Owner column) rather than created by you:
+
+Dashboard	What it answers
+Langfuse Home	Traces, cost, scores, usage, and latency in one place
+Langfuse Cost Dashboard	Where the spend is going, by model and by token type
+Langfuse Latency Dashboard	Latency distribution across traces and generations
+Langfuse Usage Management	Volume across traces, observations, and scores
+Open Langfuse Home and you should see a small non-zero trace count and a cost in the fractions of a cent, from the two queries you sent in Step 3 and Step 4. That is the whole point of the view: a single trace tells you why one reply was slow, while the dashboard tells you whether slow replies are normal.
+
+A dashboard showing "No data" is usually the time range, not missing traces. Every page carries its own independent range picker in the header, defaulting to Past 1 day. Widening it on the Tracing page does not widen it here. The Scores panel legitimately reads "No data" in this lab, because you have not attached any evaluations yet.
+
+Two overlaps in the navigation are worth knowing, since both cost people time:
+
+Home and Langfuse Home are the same dashboard. The project home page renders the Langfuse Home dashboard inline, so the sidebar's Home link and Dashboards > Langfuse Home land you on identical widgets by different routes.
+Dashboards has its own second-level tabs. Once you are on the page, a Dashboards | Widgets pair sits next to the title. Widgets is the library of individual panels that dashboards are assembled from, not a third navigation tier.
+Which view answers which question
+The breadcrumb reads AnyCompany Shop > Customer Agent, which is organization then project, and both segments are clickable. Clicking the organization leaves project scope. This workshop provisions exactly one organization and one project, so there is nothing else up there to find.
+
+What's next
+Tools still live inside the agent process: there is no shared, discoverable tool surface yet. Next up: the MCP lab, which moves lookup_order behind an MCP server the agent discovers at runtime, routed through agentgateway.
+
+
+
+Agent tools with MCP
+At a glance	Details
+Goal	Move the agent's tools out to a standalone MCP server it discovers at runtime, and route every tool call through agentgateway.
+Time	~25 minutes
+Prerequisites	The Building your first agent lab
+So far every tool has lived inside the agent process. lookup_order is a Python function in the same container as the agent loop. That works, but it means the tool ships with the agent, only this agent can use it, and there is no central place to control who may call it. In this lab you move the tools out to a standalone MCP server that the agent discovers at runtime, and you route every tool call through agentgateway, the in-cluster proxy that later labs use to authorize calls per persona.
+
+What is MCP?
+The Model Context Protocol  is an open standard for exposing tools to agents over a network. An MCP server publishes a set of tools; an MCP client (here, the Strands agent) connects, calls list_tools to discover what is available, and invokes them by name. The agent does not import the tool code; it learns the tools at runtime from the server.
+
+Why that matters: four things you get by moving tools onto the network
+Putting the tools on the network buys four things:
+
+Decoupled: the tool logic lives in one place, so a change ships once instead of being rolled out to every agent that embeds it. No agent is rebuilt, and no agent session restarts. The tool server also scales independently.
+Discoverable: add a tool to the server and the agent picks it up on its next connect, without being told the tool exists.
+Shareable: many agents can use one tool server.
+A control point: because tool calls now travel over the network, a proxy in the middle (agentgateway) can see and authorize each one. That is what the Securing the agents lab builds on.
+What is agentgateway?
+Tool calls do not go straight from the agent to the MCP server. They go through agentgateway , an MCP gateway: a proxy that speaks the protocol, so it can see individual tools/list and tools/call operations rather than opaque HTTP bodies. That is what makes per-tool authorization possible in the next lab.
+
+It is already running, in the agentgateway-system namespace, reachable in-cluster at agentgateway.agentgateway-system.svc.cluster.local:
+
+kubectl get pods,svc -n agentgateway-system
+![alt text](image-27.png)
+Configuration is Kubernetes-native. agentgateway implements the Gateway API , so routes are ordinary HTTPRoute objects, the same kind you would write for any Gateway API implementation, pointed at an MCP-specific backend. You will apply both in Step 2.
+
+The pattern is not unique to this product. Amazon Bedrock AgentCore Gateway  is the managed equivalent, and other proxies are adding MCP support. What carries over is the shape: put the tool calls on the network, then put a protocol-aware proxy in the path.
+
+What changes
+The agent's tools now split into two kinds: remote tools discovered over MCP, and one that stays local.
+
+Tool	Where it runs now	How the agent gets it
+lookup_order	MCP server (moved out)	discovered at runtime over MCP
+check_inventory	MCP server (new)	discovered at runtime over MCP
+initiate_return	MCP server (new)	discovered at runtime over MCP
+search_products	still in the agent	local @tool, vector search over the product catalog
+Two things also change in how the agent talks to those remote tools:
+
+It reaches the MCP server through agentgateway, not directly. Its MCP_SERVER_URL points at agentgateway.agentgateway-system…/mcp.
+It is now built per session and forwards the signed-in user's Cognito token on its MCP calls. This is the plumbing the Securing the agents lab turns into enforcement. The "How this works" note after Step 1 walks through it.
+Why search_products stays in the agent, and what it actually does
+search_products is the one tool still running inside the agent process, so you can see both styles side by side in a single agent. In production it would move behind MCP as well, for the same reasons the others did.
+
+What it does is retrieval-augmented generation (RAG): instead of relying on what the model happens to know, the agent retrieves real records and lets the model answer from those. Here the records are products.
+
+Product search needs this because customers do not ask for a SKU. They ask for "something to cut down background noise on calls", and no keyword lookup matches that against a product named "Noise Cancelling Headphones". So the catalog is stored in Milvus , a vector database: each product description is converted to a vector that encodes its meaning, the question is converted the same way, and the search returns the nearest ones. Similar meaning, not matching words.
+
+One honest caveat: Milvus here runs with authentication disabled, so that call is not authorized at all. Everything you are about to set up for the MCP tools (identity on the call, a proxy that checks it) has no equivalent on the Milvus path. A production deployment would enable Milvus auth and give the agent a read-only user, or put this tool behind MCP too and let the gateway police it.
+Architecture
+![alt text](image-28.png)
+MCP lab flow: the agent forwards the Cognito Bearer token over MCP through agentgateway to the MCP server whose order tools read DynamoDB, while the local search_products tool queries Milvus and LLM calls flow unchanged through the Envoy AI Gateway to Bedrock
+
+The MCP server holds the DynamoDB access its order tools need (via the agent ServiceAccount + Pod Identity), exactly as the agent did in the first lab. The tool moved, its data path did not. agentgateway sits on the tool path so a later lab can authorize each call; in this lab it simply routes.
+
+The agent's identity matches what it now does. It does not read DynamoDB, so it holds no AWS permissions: it runs under a customer-agent ServiceAccount with no Pod Identity association. Step 3 covers what that looks like in the manifest.
+
+Step 1: Code walkthrough
+Two projects this time: the MCP server and the agent that consumes it.
+
+cd ~/environment/modules/500-agent-tools-mcp
+ls mcp-server customer-agent
+
+
+mcp-server/server.py, the tools
+
+mcp-server/k8s.yaml, routing through agentgateway
+
+agent.py, discover tools at runtime
+mcp = FastMCP(
+    "AnyCompany Tools",
+    transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
+)
+
+@mcp.tool()
+def lookup_order(order_id: str) -> dict:
+    """Look up order status, tracking, and details by order ID."""
+    ...
+
+@mcp.tool()
+def check_inventory(product_name: str) -> dict:
+    """Check stock availability for a product."""
+    ...
+FastMCP turns plain functions into MCP tools. The @mcp.tool() decorator is the server-side counterpart of Strands' @tool. The same DynamoDB lookup_order from the first lab lives here now, plus check_inventory and initiate_return. The server runs as streamable_http_app() on port 8080.
+
+How this works: forwarding the user's token per session
+The MCP server sits behind agentgateway, which (in the Securing lab) authorizes each tool call by the caller's Cognito persona, so the tool call must carry the user's identity. That creates a wrinkle: Strands' MCPClient binds its auth once, when the transport connects, and binds each discovered tool to that connection. A single import-time client shared by all users could not carry a per-user token. The fix is to build the agent per session:
+
+# server.py: extract the forwarded token, build/cache an agent per session
+access_token = authorization[7:] if authorization.lower().startswith("bearer ") else None
+agent = _get_session_agent(req.session_id, access_token)
+
+# agent.py: the session's MCP client connects WITH that token
+headers = {"Authorization": f"Bearer {access_token}"} if access_token else None
+client = MCPClient(lambda u=url: streamablehttp_client(u, headers=headers))
+Step 2: Deploy the MCP server
+Both images this lab (mcp-server:v1 and customer-agent:mcp) are pre-built and pushed to ECR at provisioning time, so there is nothing to build by hand.
+
+Deploy the server first. The agent's tool discovery fails if there is nothing to connect to. Its k8s.yaml is the Deployment and Service plus the AgentgatewayBackend and HTTPRoute that put it behind agentgateway:
+
+cd ~/environment/modules/500-agent-tools-mcp/mcp-server
+envsubst < k8s.yaml | kubectl apply -f -
+kubectl rollout status deployment/mcp-server --timeout=120s
+![alt text](image-29.png)
+Confirm agentgateway accepted the route. Nothing new was deployed for the gateway itself; this reads the status the gateway wrote back onto your HTTPRoute:
+
+kubectl get httproute mcp -o jsonpath='{.status.parents[0].conditions[?(@.type=="Accepted")].status}{"\n"}'
+![alt text](image-30.png)
+You should see True. If it says False, the gateway rejected the route; kubectl describe httproute mcp shows why.
+
+Step 3: Deploy the agent
+The agent's k8s.yaml sets MCP_SERVER_URL to the agentgateway /mcp endpoint, so it reaches the tools through the proxy. It also narrows what the agent gets:
+
+What the agent stops having access to
+Now that the order tools live elsewhere, the agent's manifest changes in two ways that have nothing to do with MCP and everything to do with least privilege:
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: customer-agent      # no Pod Identity association: no AWS access
+---
+# ...Deployment...
+      serviceAccountName: customer-agent
+      env:
+        - name: MODEL_BASE_URL
+          valueFrom:
+            configMapKeyRef: { name: agent-config, key: MODEL_BASE_URL }
+        # ...named keys only: no ORDERS_TABLE, no AWS_REGION...
+A ServiceAccount with no AWS access. The agent runs as customer-agent, which has no Pod Identity association, so the pod holds no AWS permissions at all. The agent ServiceAccount still carries the DynamoDB role, and the mcp-server pod uses it, because that is where the DynamoDB code now lives.
+
+Named config keys, not the whole ConfigMap. The manifest lists the keys the agent actually reads, so ORDERS_TABLE and AWS_REGION never reach a process that has no use for them.
+
+Together that is least privilege following the code: the capability moved to the MCP server, so the permission to use it moved too. Confirm after deploying:
+
+kubectl exec deploy/customer-agent -- env | grep ORDERS_TABLE || echo "ORDERS_TABLE: not present (correct)"
+cd ~/environment/modules/500-agent-tools-mcp/customer-agent
+envsubst < k8s.yaml | kubectl apply -f -
+kubectl rollout status deployment/customer-agent --timeout=120s
+![alt text](image-31.png)
+Confirm the pod is up and listening:
+
+kubectl logs deploy/customer-agent | tail -5
+![alt text](image-32.png)
+At this point the log shows only the Uvicorn startup lines, with no tool discovery yet. That is expected. Unlike the first lab, this agent connects to the MCP server lazily, on the first chat message of a session (see the per-session identity tab). The MCP client is built per session so it can carry that user's token, so there is nothing to discover until someone chats. You will confirm discovery in the next step, after sending a query.
+
+The agent's local search_products tool searches a Milvus product_catalog collection, which starts empty. Seed it once. This pipes the seed script into the running agent pod, which already has the embedding model, pymilvus, and MILVUS_URI, so nothing has to run on the IDE:
+
+kubectl exec -i deploy/customer-agent -- python - < seed_products.py
+
+You should see Inserted 13 items into 'product_catalog' followed by a test search. The collection persists in Milvus, so this is a one-time step per cluster.
+
+Give it 30-60 seconds before testing product search in the chat UI: Milvus needs a moment to index the newly inserted rows, and a query run immediately after seeding can come back empty.
+
+Seed data through a Kubernetes Job rather than through the application pod. The Job holds the only credentials that can write to the collection, and the agent gets read-only access to a catalog it never modifies. Piping the script into the agent pod here saves you a few hundred megabytes of model download, at the cost of giving the agent write access it does not need.
+
+Step 4: Chat with it
+You do not need to sign out or sign in again. The command below just reprints the same URL and login as the earlier labs:
+
+echo "Chat UI: $CHAT_UI_URL"
+echo "  Support Associate -> $CHAT_UI_SUPPORT_USERNAME / $CHAT_UI_SUPPORT_PASSWORD"
+
+Try four queries, one per tool:
+
+Where is my order ORD-1001?
+![alt text](image-33.png)
+Do you have the Mechanical Keyboard in stock?
+
+I want to return the wireless mouse from order ORD-1002.
+
+What do you have for cutting down background noise on calls?
+
+The first three hit lookup_order, check_inventory, and initiate_return, all served by the MCP server through agentgateway. The fourth hits the local search_products, and it is the one that shows why the catalog is a vector search: nothing in that sentence matches the product name, and it still comes back with the noise cancelling headphones.
+
+The return tool needs a reason, so for the third query the agent may ask why you're returning the item before it calls initiate_return. Reply with any reason (for example, "changed my mind") and it completes the return.
+
+Nothing here is restricted by persona yet; there's a second persona, Sales Analyst, that gains a distinct role starting in the Securing the agents lab.
+
+Now that a session has connected, the discovery log line appears. This is the proof the full path works (agent → agentgateway → MCP server):
+
+kubectl logs deploy/customer-agent | grep "Discovered"
+
+You should see a line like:
+![alt text](image-34.png)
+Discovered 3 MCP tools at http://agentgateway.agentgateway-system.svc.cluster.local/mcp: ['lookup_order', 'check_inventory', 'initiate_return']
+It shows up only after the first message, because the agent connects to MCP per session (to carry that user's token), not at startup.
+
+If the agent says a tool is unavailable, recheck that the MCP server rolled out (Step 2) and the agent pod is Ready (Step 3), then send a message. The agent discovers tools when its session first connects, not at startup, so the server must be Ready before you chat.
+
+See it in Langfuse (optional)
+What you built
+Tools moved out of the agent into a standalone MCP server, discovered by the agent at runtime via list_tools. No tool names hardcoded in the agent.
+Three tools now (lookup_order, check_inventory, initiate_return) over MCP, alongside the agent's local search_products.
+Tool calls routed through agentgateway, giving a network control point for the labs that follow.
+A per-session agent that forwards the signed-in user's Cognito token on its MCP calls. Identity now travels with every tool call.
+What's next
+The forwarded token is not yet enforced. agentgateway routes the call but does not check who may run which tool. The Securing the agents lab adds the JWT auth and per-tool authorization policies.
+Analytical questions still can't be answered safely. "Total up Q1 sales by region" wants the agent to run code over many orders, not call a fixed tool. The Agents using a sandbox lab gives it a run_python tool in an isolated microVM.
+
+
+
+Securing the agents
+At a glance	Details
+Goal	Turn the forwarded Cognito token into real access control by attaching authentication and per-tool authorization policies to agentgateway.
+Time	~20 minutes
+Prerequisites	The Agent tools with MCP lab
+In the Agent tools with MCP lab the agent started forwarding the signed-in user's Cognito token on every tool call, but nothing checked it: agentgateway routed the call and the token just rode along. Both personas could call every tool. In this lab you turn that forwarded token into real access control. You attach policies to agentgateway so it authenticates the token and authorizes each tool call by the caller's persona, without changing a line of agent or tool code.
+
+This is the enforcement point the next labs depend on. The Agents using a sandbox lab gates its run_python tool to the Sales Analyst persona using exactly the mechanism you set up here, so this lab is a prerequisite for it.
+
+Two personas, different privileges
+The workshop's Cognito user pool has two personas, each in a cognito:groups claim carried by the access token:
+
+Persona	Group	Should be able to
+Support Associate	support-associate	Look up orders and process returns
+Sales Analyst	sales-analyst	Look up orders only (returns are a support action)
+The three tools from the MCP lab get mapped to those personas like this:
+
+Tool	Allowed for	Rationale
+lookup_order	Both personas	Read-only, shared.
+initiate_return	Support Associate only	Mutates an order.
+check_inventory	Neither, in this lab	Deliberately unmapped, to demonstrate deny-by-default: a tool with no matching rule is refused.
+Two policies at the gateway
+Enforcement is two AgentgatewayPolicy objects, and neither touches the agent: mcp-authn validates the Cognito JWT on every call, and mcp-tool-authz decides which persona may call which tool. Deny-by-default does the rest.
+
+Both live in ~/environment/modules/700-agentgateway-authz/policies/, one file per step of the arc you are about to walk. Each file is the complete state, so applying a step replaces the one before it.
+
+How this works: what each policy attaches to and rejects
+Each policy attaches to a different object and fails a call in a different way.
+
+Authentication (mcp-authn) attaches to the agentgateway Gateway, so it applies to everything the gateway serves. A missing or invalid token is rejected with 401 before any tool logic runs:
+
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: mcp-authn
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - kind: Gateway
+      name: agentgateway
+      group: gateway.networking.k8s.io
+  traffic:
+    jwtAuthentication:
+      mode: Strict            # no token, no entry
+      providers:
+        - issuer: __COGNITO_ISSUER__
+          audiences:
+            - __COGNITO_CLIENT_ID__
+          jwks:
+            remote:
+              backendRef:     # the JWKS host as a Backend, not a bare URL
+                group: agentgateway.dev
+                kind: AgentgatewayBackend
+                name: cognito-jwks
+                namespace: agentgateway-system
+                port: 443
+              jwksPath: __COGNITO_JWKS_PATH__
+It validates tokens against Cognito's published signing keys, which it fetches over the network. agentgateway insists that endpoint be a declared AgentgatewayBackend rather than a URL in the policy, so each file also ships one:
+
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: cognito-jwks
+  namespace: agentgateway-system
+spec:
+  static:
+    host: __COGNITO_JWKS_HOST__
+    port: 443
+  policies:
+    tls: {}                   # TLS to :443 using the system trust store
+Authorization (mcp-tool-authz) attaches to the mcp-backend from the MCP lab, so it applies only to that server's tools:
+
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: mcp-tool-authz
+  namespace: default
+spec:
+  targetRefs:
+    - kind: AgentgatewayBackend
+      name: mcp-backend       # the backend you created in the MCP lab
+      group: agentgateway.dev
+  backend:
+    mcp:
+      authorization:
+        action: Allow
+        policy:
+          matchExpressions:
+            - 'false'         # matches nothing: Step A's deny-all
+The matchExpressions list is the only thing that changes across the three steps. Everything above it stays identical, which is what makes this a policy-only exercise.
+
+Note the action: Allow with an expression that matches nothing. That is not a contradiction: agentgateway is deny-by-default, so as soon as one Allow rule exists, any tool call not matched by a rule is refused. An Allow list that matches nothing therefore denies everything.
+
+The __COGNITO_*__ placeholders are filled in from Terraform outputs in Step 1.
+How a denial looks matters. A missing or invalid token fails at authentication with a visible 401. But a valid token whose persona lacks the right is handled differently: agentgateway hides the unauthorized tool from tools/list, so the agent never discovers it. The model then simply reports it cannot do that, rather than surfacing a 403. So the observable effect of "this persona may not use this tool" is the tool being absent from the agent's discovered tool list.
+
+Architecture
+![alt text](image-35.png)
+Securing flow: the persona's Cognito token rides from the Chainlit UI through the agent to agentgateway, where mcp-authn validates the JWT against Cognito's JWKS and mcp-tool-authz checks cognito per tool before allowed calls reach the MCP server
+
+Step 1: Substitute this event's Cognito values
+The policy files ship with placeholders (__COGNITO_ISSUER__ and friends). Fill them from Terraform outputs. The -chdir flag does not expand ~, so use $HOME for the Terraform path:
+
+cd ~/environment/modules/700-agentgateway-authz
+TFDIR="$HOME/environment/terraform"
+
+echo "Reading four Terraform outputs, about 10 seconds..."
+ISSUER=$(terraform -chdir="$TFDIR" output -raw cognito_issuer)
+JWKS_HOST=$(terraform -chdir="$TFDIR" output -raw cognito_jwks_host)
+JWKS_PATH=$(terraform -chdir="$TFDIR" output -raw cognito_jwks_path)
+CLIENT=$(terraform -chdir="$TFDIR" output -raw cognito_client_id)
+echo "Done."
+
+render() {  # render <step-file>, substituting the four placeholders
+  sed -e "s|__COGNITO_ISSUER__|$ISSUER|g" \
+      -e "s|__COGNITO_JWKS_HOST__|$JWKS_HOST|g" \
+      -e "s|__COGNITO_JWKS_PATH__|$JWKS_PATH|g" \
+      -e "s|__COGNITO_CLIENT_ID__|$CLIENT|g" "$1"
+}
+![alt text](image-36.png)
+The four terraform output calls run one after another and each reads the remote state, so the block sits silent for several seconds. That is why it announces itself. It has not hung.
+
+render is a small sed wrapper you will use to apply each policy below: it fills the four placeholders in a file and writes the result to standard output.
+
+Confirm the values are non-empty before applying
+If the Terraform path is wrong, the four variables come back empty, render substitutes empty strings, and kubectl apply fails with validation errors like issuer: Required value. Print them first and make sure all four have values:
+
+printf 'ISSUER=%s\nJWKS_HOST=%s\nJWKS_PATH=%s\nCLIENT=%s\n' \
+  "$ISSUER" "$JWKS_HOST" "$JWKS_PATH" "$CLIENT"
+
+Step 2: Walk the three-step arc
+Each policy file is the cumulative state, so applying step N replaces step N-1. Apply one step at a time and test in the chat UI after each, so you see the behavior change.
+
+Open the chat UI now and sign in as Support Associate (the Sales Analyst contrast comes at the end of Step C, where you'll need that persona's login too):
+
+echo "Chat UI: $CHAT_UI_URL"
+echo "  Support Associate -> $CHAT_UI_SUPPORT_USERNAME / $CHAT_UI_SUPPORT_PASSWORD"
+
+Each step is tested with the same message. Watching one prompt's outcome change as each policy lands is the whole demonstration.
+
+Start a new chat after every policy you apply
+The agent discovers its tools once per conversation, on the first message, and caches them for the rest of it. A policy you apply mid-conversation therefore has no effect on that conversation: you would be testing the old tool list.
+
+So after each render ... | kubectl apply below, start a new conversation before sending the test message. The control is the pencil icon at the top-left of the chat UI, above the conversation. It has no text label, only a "New Chat" tooltip on hover, and there is no chat-history sidebar. That starts a new session, which makes the agent reconnect and re-discover under the policy you just applied. You stay signed in; there is no need to sign out or open another window.
+
+If a step's result looks like the previous step's, that is almost always this.
+
+
+Step C: differentiate by persona
+Authenticate every call and deny every tool. The authz policy's single Allow rule matches nothing ('false'), so with one rule present, deny-by-default blocks all tools even for a valid token.
+
+render policies/step1-deny-all.yaml | kubectl apply -f -
+![alt text](image-37.png)
+What that YAML actually does: it sets action: Allow and gives it a matchExpressions list containing the single string 'false'. That expression evaluates to false for every tool call, so the one Allow rule never matches anything. The policy engine is deny-by-default the moment any rule exists, so an Allow rule that matches nothing is equivalent to denying everything. That is why this file, despite saying Allow, denies every tool for every persona.
+
+Start a new chat (pencil icon, top-left), then send:
+
+I want to return the wireless mouse from order ORD-1002.
+![alt text](image-42.png)
+Expected: the agent replies that it does not have access to process returns. Every MCP tool is denied for both personas, but note the denial is silent: no error in the chat, just an agent without the tools. This also proves the token reaches the gateway: a rejected call returns from authorization, not a 401 from authentication.
+
+The Langfuse trace makes the mechanism visible: the gateway's tools/list span under POST /mcp/* returns no tools, so the agent's invoke_agent span contains only its local search_products call (served by Milvus, which does not go through the gateway) before the model explains it cannot perform the action.
+
+Langfuse trace under deny-all: the tools/list span returns no tools, and the agent makes a single local search_products call before declining
+![alt text](image-43.png)
+Step B: allow the shared tool
+
+Allow lookup_order for any authenticated persona. Every other tool stays denied.
+
+render policies/step2-allow-lookup.yaml | kubectl apply -f -
+![alt text](image-40.png)
+matchExpressions:
+  - 'mcp.tool.name == "lookup_order"'
+Start a new chat (pencil icon, top-left), then send the same message:
+
+I want to return the wireless mouse from order ORD-1002.
+![alt text](image-44.png)
+Expected: a partial win. The agent now looks up ORD-1002 and tells you what is in it (it can see the wireless mouse), but still cannot process the return. lookup_order works for both personas; check_inventory and initiate_return are still absent. Success here proves the Cognito token propagates end to end (UI → agent → gateway).
+![alt text](image-45.png)
+The trace shows the difference from Step A: lookup_order now appears as a tool span and its tools/call mcp-server leg reaches the MCP server, returning the real order (items, tracking, total), while the assistant still declines the return, because initiate_return remains outside its discovered tools.
+
+Step C: differentiate by persona
+Keep lookup_order open to all, and additionally allow initiate_return but only for support-associate. matchExpressions are OR-ed, so a call is allowed if any expression matches.
+
+render policies/step3-differentiate.yaml | kubectl apply -f -
+
+matchExpressions:
+  - 'mcp.tool.name == "lookup_order"'
+  - 'mcp.tool.name == "initiate_return" && "support-associate" in jwt["cognito:groups"]'
+The cognito:groups claim name contains a colon and its value is a list; jwt["cognito:groups"] reads it and in tests membership.
+
+Start a new chat (pencil icon, top-left), still signed in as Support Associate, and send the same message once more:
+
+I want to return the wireless mouse from order ORD-1002.
+![alt text](image-46.png)
+Expected: the return finally goes through. The agent looks up the order, calls initiate_return, and replies with an approved return authorization:
+
+Chat UI as Support Associate: lookup_order and initiate_return tool steps, then the approved return with authorization number RET-1002
+![alt text](image-47.png)
+The trace shows the full arc in one request: lookup_order then initiate_return both execute through the gateway (tools/call mcp-server), and the tool result carries the approved return (RET-1002, status: approved) that the assistant relays back.
+
+Langfuse trace as Support Associate: lookup_order and initiate_return both reach the MCP server, and the return comes back approved as RET-1002
+
+This works because your Support Associate token carries cognito:groups: [support-associate], which the second match expression requires.
+
+Now prove the differentiation: the same prompt, from the other persona, must still be refused. This one does need a new incognito window, because you are changing who is signed in, not just starting a new conversation, and Cognito keeps the Support Associate session in your normal window.
+
+echo "Chat UI: $CHAT_UI_URL"
+echo "  Sales Analyst -> $CHAT_UI_ANALYST_USERNAME / $CHAT_UI_ANALYST_PASSWORD"
+
+Sign in there as Sales Analyst and send the same message.
+
+The analyst's agent can look the order up (lookup_order is allowed for everyone) but reports it cannot process the return, because initiate_return was never in its tool list: the same persona-shaped denial you saw in steps A and B, now applying to only one of the two personas.
+
+Confirm from the agent's discovery log, which prints the tools each persona's session actually received:
+![alt text](image-48.png)
+kubectl logs deployment/customer-agent --tail=100 | grep Discovered
+
+The two newest lines are one per persona: the Support Associate's lists initiate_return, the Sales Analyst's does not:
+![alt text](image-49.png)
+Discovered 2 MCP tools at http://agentgateway.agentgateway-system.svc.cluster.local/mcp: ['lookup_order', 'initiate_return']
+Discovered 1 MCP tools at http://agentgateway.agentgateway-system.svc.cluster.local/mcp: ['lookup_order']
+Discovery happens once per conversation, on first connect, so look at the two most recent lines, one per persona. Older lines linger from earlier labs (for example a 3-tool line from Agent tools with MCP, before any authz policy existed). If both recent lines show only ['lookup_order'], you are still seeing Step B's policy: re-apply Step C, then start a new chat (pencil icon, top-left) in each persona's window so each re-discovers under the new policy.
+
+What you built
+Authentication at agentgateway: Cognito JWTs validated against the pool's JWKS, with missing or invalid tokens rejected (401) before any tool runs.
+Per-tool authorization keyed to the cognito:groups persona, with deny-by-default so an unmatched tool call is refused.
+Enforcement that is policy-only: the agent and the MCP server did not change. The token plumbing from the MCP lab became real access control just by attaching two policies.
+What's next
+The Agents using a sandbox lab adds a run_python code-execution tool and gates it to the Sales Analyst persona using this same authorization mechanism, so the persona check you built here is what scopes who may run code.
+
+
+Agents using a sandbox
+At a glance	Details
+Goal	Give the agent a run_python tool that writes and runs pandas over the orders in an air-gapped, single-use microVM, and render charts inline in the chat.
+Time	~25 minutes
+Prerequisites	The Agent tools with MCP and Securing the agents labs
+The tools so far answer a fixed question: lookup_order returns one order, check_inventory checks one product. But a Sales Analyst asks open-ended questions like "chart last month's sales by region." There is no fixed tool for that. The model needs to write code, run it over many orders, and show the result.
+
+Running model-written code is the risk this lab handles. Each execution gets its own throwaway virtual machine on EKS, created through Kata Containers : a runtime that looks like a container to Kubernetes but boots a real VM with its own kernel underneath, so a process escaping the container has escaped into a VM rather than onto the node. The VM is air-gapped, with no network and no credentials, and it is destroyed after one run. And when the analyst wants a chart, the agent renders one inline in the chat, with a collapsible dropdown showing the exact code that produced it.
+
+Kata supports several hypervisors. This workshop configures it with Firecracker , the open-source AWS hypervisor built for exactly this shape of workload: it boots a stripped-down VM in a few hundred milliseconds, which is what makes per-execution isolation affordable. The runtime class is named kata-fc after that pairing. Swapping in a different hypervisor would be a platform change, invisible to the agent.
+
+Prerequisites: the Agent tools with MCP and Securing the agents labs
+This lab builds on two earlier labs and does not replace them. Complete both first, or the agent has nothing to connect to and no persona check to pass:
+
+Agent tools with MCP: the orders mcp-server must be running. If it is not, the agent's log shows MCPClientInitializationError and every chat returns nothing.
+Securing the agents: the gateway's mcp-authn JWT policy must be applied, or there is no jwt for the run_python rule to read and the log shows Discovered 0 MCP tools at .../code-mcp: [].
+Quick confirmation that both are in place:
+
+kubectl rollout status deployment/mcp-server
+kubectl get agentgatewaypolicy mcp-authn -n agentgateway-system
+![alt text](image-51.png)
+Why not just give the model the raw orders?
+You could hand the model a few hundred order rows and ask it to add them up. That is slow, it burns tokens, and models are unreliable at arithmetic over long lists. Writing df.groupby('region')['total'].sum() and running it is exact and cheap. So this lab gives the agent one tool, run_python, and teaches the model to answer analytical questions by writing pandas instead of guessing.
+
+The catch: model-written code is untrusted. You do not want it running in the agent's pod with the agent's DynamoDB credentials. So the code runs somewhere with nothing worth stealing.
+
+The isolation model
+run_python does not execute code in the agent. It calls a broker (the code-executor MCP server) that fetches a scoped slice of orders, claims a fresh kata-fc microVM, writes the rows and the generated code into it as files, runs the code, reads back the result, and destroys the microVM. Two properties make this safe: the microVM is air-gapped (no network, no credentials), and the order rows go in as a file, so the raw data never passes through the LLM.
+
+How this works: the broker, the microVM, and the data path
+Per call, the broker:
+
+builds a scoped, parameterized DynamoDB query from validated parameters (the model picks a fiscal quarter and optional filters, never a raw query),
+fetches that bounded slice of orders (the broker holds read-only creds),
+claims a pre-warmed kata-fc microVM from a pool and writes the rows and the generated code into it as files,
+runs the code, reads back stdout and any chart, then destroys the microVM.
+The pool is why this is fast enough to sit behind a chat message: a few microVMs are kept booted and idle, so a run claims one rather than waiting for a cold start.
+
+Two properties make this safe to run untrusted code:
+
+The microVM is air-gapped. Its NetworkPolicy sets egress: [] and it mounts no ServiceAccount token, so even if the code tries to exfiltrate data or call AWS, there is nowhere to go and nothing to authenticate with.
+The data goes in out-of-band. The order rows are written to the microVM as a file (/app/orders.json), not passed through the LLM. The model writes code against a described schema; it never sees the raw rows in its context.
+
+How this works: keeping the chart off the LLM path
+When the analyst wants a picture, the generated code saves a matplotlib figure to /app/chart.png inside the microVM. The chart then follows the same out-of-band path as the order data, so the image never enters the LLM context:
+
+run_python → broker → microVM: the code saves /app/chart.png
+broker reads the PNG back, caches it, returns a short chart_id to the agent
+agent fetches the PNG from the broker (GET /chart/{id}) and streams it to the UI
+UI renders the chart inline, below the collapsible code step
+The model only ever sees a chart_id, never the base64 image. The bytes travel broker → agent → browser on a side channel, exactly like the order rows are injected on a side channel. This keeps the "data never passes through the LLM" property intact for the picture as well as the numbers.
+
+Why bother: an image is expensive in tokens and useless to the model here, since it already knows what it plotted. Keeping it out of the context window costs nothing and removes an entire class of accident.
+
+At scale, put the image in object storage instead of application memory: the broker writes the PNG to Amazon S3 and returns a presigned URL that expires in minutes. Any replica can then serve any chart, a restart loses nothing, and the browser fetches the bytes directly. The property that matters, the model seeing only a reference, is the same either way.
+
+Here the broker keeps the bytes in a small in-memory cache, which is why the whole path fits in one file you can read.
+Persona: who may run code
+run_python is gated to the Sales Analyst persona. Signed in as the analyst, the tool is available; signed in as the Support Associate, the same request is denied at agentgateway (the JWT persona check from the Securing the agents lab). Code execution is a high-impact capability, so it is scoped to the role that needs it.
+
+Architecture
+![alt text](image-50.png)
+Sandbox flow: the Sales Analyst's request flows through agentgateway where run_python is authorized for that persona only, to the code-executor broker which fetches a read-only orders slice from DynamoDB and runs the generated code in an air-gapped kata-fc microVM, returning stdout plus a chart_id with the chart bytes traveling out-of-band
+
+Step 1: Code walkthrough
+The broker exposes one tool and serves the chart on a side-channel route. The agent fetches that chart and re-streams it to the UI.
+
+cd ~/environment/modules/900-sandboxed-code-exec
+ls code-executor-mcp python-runtime-sandbox
+
+
+server.py: the run_python tool
+
+server.py: the chart side channel
+
+sandbox_runner.py: read the chart back
+
+the agent's server.py: fetch + stream the image
+@mcp.tool()
+def run_python(code: str, period: str, region: str | None = None, ...) -> dict:
+    """Run Python against a scoped slice of the orders dataset in a microVM.
+    Save a chart to /app/chart.png to show the user a figure.
+    ..."""
+    rows = _fetch_rows(period=period, region=region, ...)  # scoped DynamoDB Query
+    result = run_in_sandbox(code, rows)                      # vend microVM, run code
+    image_png = result.pop("image_png", None)
+    if image_png:
+        result["chart_id"] = _charts.put(image_png)          # cache; return id only
+    return result
+The tool returns stdout, a row count, and (if the code drew one) a chart_id. The raw PNG stays in the broker's cache. The docstring tells the model to fetch a whole fiscal quarter and filter to a month in code, so a "last month" question works against the quarter-keyed dataset.
+
+Step 2: Deploy the broker and its authz
+Three images back this lab, all pre-built and pushed to ECR at provisioning time, so there is nothing to build by hand: the broker (code-executor-mcp), the microVM runtime (python-runtime-sandbox, which bundles matplotlib), and the agent (customer-agent:code-exec, pointed at both the orders MCP and the broker).
+
+Deploy the broker first, then the policy that scopes run_python to the analyst:
+
+cd ~/environment/modules/900-sandboxed-code-exec
+envsubst < code-executor-mcp/k8s.yaml | kubectl apply -f -
+kubectl rollout status deployment/code-executor-mcp --timeout=120s
+kubectl apply -f policies/run-python-authz.yaml
+![alt text](image-52.png)
+You should see deployment "code-executor-mcp" successfully rolled out.
+
+If the 120s timeout expires, check kubectl get pods -l app=code-executor-mcp for the pod's status and kubectl describe pod <pod-name> for the reason: a missing ConfigMap key or an image still being pushed by provisioning are the usual causes. Retrying the rollout after a minute resolves the latter.
+
+Confirm the broker rolled out and the authz policy is in place:
+
+kubectl get agentgatewaypolicy code-mcp-tool-authz -n default
+
+You should see output like this, with the policy's name, namespace, and age:
+![alt text](image-53.png)
+NAME                  AGE
+code-mcp-tool-authz   12s
+Step 3: Deploy the agent
+The agent's k8s.yaml points MCP_SERVER_URLS at both the orders MCP and the broker, so it gains run_python alongside the earlier tools:
+
+cd ~/environment/modules/900-sandboxed-code-exec/agent
+envsubst < k8s.yaml | kubectl apply -f -
+kubectl rollout status deployment/customer-agent --timeout=120s
+
+You should see the rollout finish with deployment "customer-agent" successfully rolled out.
+![alt text](image-55.png)
+The agent's code has not changed since the MCP lab. customer-agent:code-exec is built from the same source as customer-agent:mcp, just tagged differently, and the only difference at deploy time is MCP_SERVER_URLS naming two endpoints instead of one. The agent gains a tool by being pointed at another MCP server, not by being rewritten, which is the payoff of the previous lab. It also keeps the same no-IAM customer-agent ServiceAccount: the broker holds the read-only DynamoDB access, the agent holds none.
+
+Step 4: Ask for a chart
+Open the chat UI and sign in as the Sales Analyst. If you already have a chat open from an earlier lab, start a new conversation with the pencil icon at the top-left (no text label, "New Chat" on hover): the agent discovers its tools once per conversation, so an existing session won't pick up run_python.
+
+echo "Chat UI: $CHAT_UI_URL"
+echo "  Sales Analyst -> $CHAT_UI_ANALYST_USERNAME / $CHAT_UI_ANALYST_PASSWORD"
+![alt text](image-56.png)
+Ask an analytical question:
+
+Chart last month's sales by region.
+![alt text](image-54.png)
+The agent writes pandas, runs it in a microVM, and answers with a short text readout plus an inline chart. Expand the code sandbox (run_python) step to see the exact code that produced it.
+
+Inline sales-by-region chart in the chat, with the expanded run_python code sandbox step showing the pandas code that produced it
+
+Try a text-only one too:
+
+What were total Q1 2026 sales aggregated by region?
+
+Inline total sales result in the chat, with the expanded run_python code sandbox step showing the pandas code that produced it
+
+Now sign out and back in as the Support Associate and ask the same chart question. The analyst persona may run code; the support persona may not. Just like in Securing the agents, agentgateway hides run_python from the support session's tool list, so the agent replies that it cannot run that analysis rather than returning an error.
+
+echo "  Support Associate -> $CHAT_UI_SUPPORT_USERNAME / $CHAT_UI_SUPPORT_PASSWORD"
+
+Chat UI as Support Associate: the same chart request comes back with the agent listing only its order and product tools, no code sandbox step and no chart
+![alt text](image-57.png)
+The Langfuse trace shows the whole chart request in one tree: the agent's first chat generation writes the pandas code, the run_python tool span routes it through the gateway (tools/call code-executor-mcp) to the broker, and the tool result comes back with exit_code: 0, the row_count the code processed, and a chart_id. Note what the result does not contain: the chart image itself. The model only ever sees that short chart_id reference, and the PNG travels back to the UI out-of-band, which keeps image bytes out of the LLM context. A second generation then turns the numbers into the final readout:
+![alt text](image-58.png)
+Langfuse trace of the chart request: the chat generation, the run_python call through code-executor-mcp, the tool result with exit_code 0 and a chart_id, and the final sales-by-region answer
+
+Verify the isolation
+Each execution is single-use: the broker claims a pre-warmed microVM from the kata-fc-python-pool, runs the code, and always terminates it, so nothing (files, processes, state) survives into the next run. The pool then spins up a fresh replacement.
+
+To watch that happen you need eyes on the sandboxes before the run starts, so set up two observation terminals first. Both commands filter on sandbox-kind=python, the label this lab's SandboxTemplate stamps on its pods, so you see only this lab's sandboxes (the final lab runs a separate coding pool in the same namespace). In the first terminal, watch the sandbox pods:
+
+kubectl get pods -n agent-sandbox -l sandbox-kind=python -w
+![alt text](image-59.png)
+In the second, stream the logs of this lab's sandbox pods (each runs a small runtime server whose access log shows the broker shipping work in and pulling results out). The grep -v drops the readiness probe, which hits / on every pool pod once a second and would otherwise bury the run:
+
+kubectl logs -n agent-sandbox -l sandbox-kind=python --prefix -f \
+  | grep -v '"GET / HTTP'
+
+With both running, go back to the chat and ask one more chart question:
+
+Chart last month's sales by region.
+
+In the pod watch, a pool pod gets claimed for the run, terminates seconds later, and a brand-new pod appears to take its place in the pool (Ctrl+C to stop watching).
+![alt text](image-60.png)
+
+The claim and terminate happen within a few seconds, so if you miss it in the watch, run this before and after a query instead and compare the pod names:
+
+kubectl get pods -n agent-sandbox -l sandbox-kind=python
+
+The pod that served your run is gone and a fresh one has replaced it, which is the same single-use behavior the live watch shows.
+
+In the log stream, the claimed pod shows the whole run: two uploads (the quarter's order rows, then the generated main.py), the execute, the chart coming back out, and then the runtime shutting down as the broker terminates the used microVM.
+
+The log stream line by line
+Note what the pod log does not show: the code, its stdout, or the chart. Those travel only in the request/response bodies, back through the broker into the tool result, which you saw in the Langfuse trace above. The log is just the runtime's access log, which is exactly what makes it a clean proof of the data path: code and data go in over /upload, results come out over /download, and nothing else talks to the microVM.
+![alt text](image-61.png)
+Finally, confirm the air gap. Read the policy itself rather than the summary table, because the rules are the interesting part:
+
+kubectl get networkpolicy kata-fc-python-airgap -n agent-sandbox \
+  -o jsonpath='{.spec}' | python3 -m json.tool
+![alt text](image-62.png)
+The part that matters:
+
+"egress": [],
+"policyTypes": ["Ingress", "Egress"]
+An empty egress list with Egress in policyTypes is not "no rules configured", it is "no destination is permitted". The microVM computed your chart with nowhere to send anything. Combined with automountServiceAccountToken: false on the pod, code running in there has neither a route out nor a credential to use if it found one.
+
+The ingress rule is equally narrow: the only thing allowed to talk to a sandbox is the sandbox router, by pod selector, so the broker's traffic can get in and nothing else can.
+
+What you built
+A run_python tool that answers open-ended analytical questions by writing pandas, not by guessing over raw rows.
+VM-level isolation for untrusted code: a per-execution kata-fc microVM, air-gapped, with no credentials, claimed per call and destroyed after.
+Inline charts rendered in the chat, with a collapsible dropdown showing the code that produced each one, and the chart bytes kept off the LLM path.
+Code execution scoped to the Sales Analyst persona at agentgateway.
+What's next
+The final lab hands the whole agent, not just a code snippet, to a microVM: a git issue triggers Claude Code to implement a change and open a pull request, all inside an isolated sandbox with no human credentials.

@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ArrowLeft, ChevronDown, Check, Copy, List, BookOpen, Lightbulb } from "lucide-react";
+import { ArrowLeft, ChevronDown, Check, Copy, List, Info, Lightbulb, X } from "lucide-react";
 import { posts, featuredPost } from "@/data/posts";
 import { allImages } from "@/data/images";
 import Header from "@/components/blog/Header";
@@ -75,7 +75,7 @@ const TableOfContents = ({ headings }: { headings: Heading[] }) => {
       <div className="sticky top-28 max-h-[calc(100vh-8rem)] overflow-y-auto pr-1">
         <div className="mb-4 flex items-center gap-2">
           <List className="h-3.5 w-3.5 text-primary" />
-          <p className="text-xs font-semibold text-primary">On this page</p>
+          <p className="text-xs font-semibold text-primary">Trong bài này</p>
         </div>
         <nav className="space-y-0.5">
           {headings.map(({ text, id, level }, i) => {
@@ -88,9 +88,8 @@ const TableOfContents = ({ headings }: { headings: Heading[] }) => {
               <div key={id} className={isH3 ? "relative pl-3" : ""}>
                 {isH3 && (
                   <span
-                    className={`absolute left-0 top-0 w-px bg-border ${
-                      prevIsH2 ? "top-0" : "-top-0.5"
-                    } ${nextIsH3 ? "bottom-0" : "bottom-1/2"}`}
+                    className={`absolute left-0 top-0 w-px bg-border ${prevIsH2 ? "top-0" : "-top-0.5"
+                      } ${nextIsH3 ? "bottom-0" : "bottom-1/2"}`}
                   />
                 )}
                 <a
@@ -100,15 +99,13 @@ const TableOfContents = ({ headings }: { headings: Heading[] }) => {
                     document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
                     setActive(id);
                   }}
-                  className={`block rounded-md py-1.5 text-[0.78rem] leading-snug transition-all duration-150 ${
-                    isH3 ? "pl-3 text-[0.75rem]" : "pl-3"
-                  } ${
-                    active === id
+                  className={`block rounded-md py-1.5 text-[0.78rem] leading-snug transition-all duration-150 ${isH3 ? "pl-3 text-[0.75rem]" : "pl-3"
+                    } ${active === id
                       ? "bg-primary/10 font-semibold text-primary"
                       : isH3
                         ? "text-muted-foreground/70 hover:text-foreground hover:bg-secondary"
                         : "text-muted-foreground hover:text-foreground hover:bg-secondary"
-                  }`}
+                    }`}
                 >
                   {text}
                 </a>
@@ -132,7 +129,7 @@ const MobileTableOfContents = ({ headings }: { headings: Heading[] }) => {
         className="flex w-full items-center justify-between px-4 py-3 text-sm transition-colors hover:bg-secondary/50"
       >
         <span className="flex items-center gap-2 text-xs font-semibold text-primary">
-          <List className="h-3.5 w-3.5" /> On this page
+          <List className="h-3.5 w-3.5" /> Trong bài này
         </span>
         <ChevronDown
           className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${open ? "rotate-180" : ""}`}
@@ -153,11 +150,10 @@ const MobileTableOfContents = ({ headings }: { headings: Heading[] }) => {
                 <a
                   href={`#${id}`}
                   onClick={() => setOpen(false)}
-                  className={`block rounded-md py-1.5 transition-colors hover:text-foreground hover:bg-secondary ${
-                    isH3
-                      ? "pl-3 text-[0.82rem] text-muted-foreground/70"
-                      : "pl-2 text-sm text-muted-foreground"
-                  }`}
+                  className={`block rounded-md py-1.5 transition-colors hover:text-foreground hover:bg-secondary ${isH3
+                    ? "pl-3 text-[0.82rem] text-muted-foreground/70"
+                    : "pl-2 text-sm text-muted-foreground"
+                    }`}
                 >
                   {text}
                 </a>
@@ -183,7 +179,7 @@ const CodeBlock = ({ children }: { children: React.ReactNode }) => {
   };
 
   return (
-    <div className="mb-6 rounded-xl overflow-hidden border border-slate-700/50 dark:border-slate-700/80 shadow-sm">
+    <div className="mx-auto mb-6 max-w-[var(--container-wide)] rounded-xl overflow-hidden border border-slate-700/50 dark:border-slate-700/80 shadow-sm">
       {/* terminal toolbar — always dark regardless of page theme */}
       <div className="flex items-center justify-between bg-slate-800 px-4 py-2.5">
         <div className="flex items-center gap-1.5">
@@ -193,13 +189,13 @@ const CodeBlock = ({ children }: { children: React.ReactNode }) => {
         </div>
         <button
           onClick={handleCopy}
-          aria-label="Copy code"
+          aria-label="Sao chép code"
           className="flex items-center gap-1.5 rounded px-2 py-0.5 text-[11px] font-mono text-slate-400 transition-colors hover:text-slate-100"
         >
           {copied ? (
-            <><Check className="h-3 w-3 text-emerald-400" />copied</>
+            <><Check className="h-3 w-3 text-emerald-400" />Copied!</>
           ) : (
-            <><Copy className="h-3 w-3" />copy</>
+            <><Copy className="h-3 w-3" />Copy</>
           )}
         </button>
       </div>
@@ -213,48 +209,40 @@ const CodeBlock = ({ children }: { children: React.ReactNode }) => {
   );
 };
 
-// Summary card shown at the top of the post
-const PostSummaryCard = ({ summary, takeaways }: { summary: string[]; takeaways: string[] }) => {
-  if (!summary?.length && !takeaways?.length) return null;
+// "Vấn đề" - đầu bài. Nêu bài toán, không spoil kết luận.
+const ProblemCard = ({ problem }: { problem?: string }) => {
+  if (!problem) return null;
   return (
-    <div className="mb-10 grid gap-4 sm:grid-cols-2">
-      {summary?.length > 0 && (
-        <div className="rounded-xl border border-teal-200 dark:border-teal-800/60 bg-teal-50 dark:bg-teal-950/40 p-5">
-          <div className="mb-3 flex items-center gap-2">
-            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-teal-500/15 dark:bg-teal-400/15">
-              <BookOpen className="h-3.5 w-3.5 text-teal-600 dark:text-teal-400" />
-            </div>
-            <p className="text-xs font-semibold tracking-wide text-teal-700 dark:text-teal-400">Summary</p>
-          </div>
-          <ul className="space-y-2">
-            {summary.map((item, i) => (
-              <li key={i} className="flex items-start gap-2.5 text-sm leading-relaxed text-foreground/85">
-                <span className="mt-[7px] h-1.5 w-1.5 rounded-full bg-teal-500 dark:bg-teal-400 shrink-0" />
-                {item}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-      {takeaways?.length > 0 && (
-        <div className="rounded-xl border border-amber-200 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/40 p-5">
-          <div className="mb-3 flex items-center gap-2">
-            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-amber-400/20 dark:bg-amber-400/15">
-              <Lightbulb className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
-            </div>
-            <p className="text-xs font-semibold tracking-wide text-amber-700 dark:text-amber-400">Key takeaways</p>
-          </div>
-          <ul className="space-y-2">
-            {takeaways.map((item, i) => (
-              <li key={i} className="flex items-start gap-2.5 text-sm leading-relaxed text-foreground/85">
-                <span className="mt-[7px] h-1.5 w-1.5 rounded-full bg-amber-500 dark:bg-amber-400 shrink-0" />
-                {item}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </div>
+    <aside className="mb-10 rounded-r-xl border-l-4 border-primary bg-secondary/60 p-5">
+      <p className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-primary">
+        <Info className="h-4 w-4" />
+        Vấn đề
+      </p>
+      <p className="text-[15px] leading-relaxed text-foreground/90">{problem}</p>
+    </aside>
+  );
+};
+
+// "Bài học rút ra" - cuối bài. Đúc kết, đánh số.
+const TakeawaysCard = ({ takeaways }: { takeaways: string[] }) => {
+  if (!takeaways?.length) return null;
+  return (
+    <aside className="mt-12 rounded-2xl bg-primary/10 p-6">
+      <p className="mb-4 flex items-center gap-2 font-display text-base font-bold text-foreground">
+        <Lightbulb className="h-5 w-5 text-primary" />
+        Bài học rút ra
+      </p>
+      <ol className="space-y-3">
+        {takeaways.map((item, i) => (
+          <li key={i} className="flex gap-3 text-[15px] leading-relaxed text-foreground/90">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
+              {i + 1}
+            </span>
+            <span>{item}</span>
+          </li>
+        ))}
+      </ol>
+    </aside>
   );
 };
 
@@ -323,13 +311,31 @@ const PostPage = () => {
   const { slug } = useParams<{ slug: string }>();
   const post = allPosts.find((p) => p.slug === slug);
 
+  // Lightbox: ảnh đang phóng to (null = đóng)
+  const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null);
+
+  // Đóng lightbox bằng phím Escape, và khoá scroll nền khi đang mở
+  useEffect(() => {
+    if (!lightbox) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setLightbox(null);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [lightbox]);
+
   if (!post) {
     return (
       <div className="min-h-screen bg-background">
         <Header />
         <main className="container py-20 text-center">
-          <p className="text-muted-foreground">Post not found.</p>
-          <Link to="/" className="mt-4 inline-block text-primary hover:underline">← Back home</Link>
+          <p className="text-muted-foreground">Không tìm thấy bài viết.</p>
+          <Link to="/" className="mt-4 inline-block text-primary hover:underline">← Về trang chủ</Link>
         </main>
         <Footer />
       </div>
@@ -342,7 +348,7 @@ const PostPage = () => {
     h2: ({ children }: { children: React.ReactNode }) => {
       const id = slugify(String(children));
       return (
-        <h2 id={id} className="mt-12 mb-4 font-display text-2xl font-bold text-foreground scroll-mt-24">
+        <h2 id={id} className="mx-auto mt-12 mb-4 max-w-[var(--container-prose)] font-display text-2xl font-bold text-foreground scroll-mt-24">
           {children}
         </h2>
       );
@@ -350,13 +356,13 @@ const PostPage = () => {
     h3: ({ children }: { children: React.ReactNode }) => {
       const id = slugify(String(children));
       return (
-        <h3 id={id} className="mt-8 mb-3 font-display text-lg font-semibold text-foreground scroll-mt-24">
+        <h3 id={id} className="mx-auto mt-8 mb-3 max-w-[var(--container-prose)] font-display text-lg font-semibold text-foreground scroll-mt-24">
           {children}
         </h3>
       );
     },
     p: ({ children }: { children: React.ReactNode }) => (
-      <p className="mb-5 text-[1.0625rem] leading-[1.85] text-foreground/85">{children}</p>
+      <p className="mx-auto mb-5 max-w-[var(--container-prose)] text-[1.0625rem] leading-[1.85] text-foreground/85">{children}</p>
     ),
     strong: ({ children }: { children: React.ReactNode }) => (
       <strong className="font-bold text-foreground">{children}</strong>
@@ -364,8 +370,8 @@ const PostPage = () => {
     em: ({ children }: { children: React.ReactNode }) => (
       <em className="font-medium text-foreground/70">{children}</em>
     ),
-    ul: ({ children }: { children: React.ReactNode }) => <ul className="mb-5 space-y-2 pl-1">{children}</ul>,
-    ol: ({ children }: { children: React.ReactNode }) => <ol className="mb-5 space-y-2 pl-1 list-none">{children}</ol>,
+    ul: ({ children }: { children: React.ReactNode }) => <ul className="mx-auto mb-5 max-w-[var(--container-prose)] space-y-2 pl-1">{children}</ul>,
+    ol: ({ children }: { children: React.ReactNode }) => <ol className="mx-auto mb-5 max-w-[var(--container-prose)] space-y-2 pl-1 list-none">{children}</ol>,
     li: ({ children }: { children: React.ReactNode }) => (
       <li className="flex items-start gap-3 text-[1.0625rem] leading-[1.8] text-foreground/85">
         <span className="mt-2 h-1.5 w-1.5 rounded-full bg-primary shrink-0" />
@@ -382,19 +388,19 @@ const PostPage = () => {
       ),
     pre: ({ children }: { children: React.ReactNode }) => <CodeBlock>{children}</CodeBlock>,
     blockquote: ({ children }: { children: React.ReactNode }) => (
-      <blockquote className="mb-6 rounded-r-xl border-l-[3px] border-primary bg-primary/5 py-4 pl-5 pr-5 text-[0.9625rem] leading-[1.75] text-foreground/90 [&_p]:mb-0 [&_p]:leading-[1.75]">
+      <blockquote className="mx-auto mb-6 max-w-[var(--container-prose)] rounded-r-xl border-l-[3px] border-primary bg-primary/5 py-4 pl-5 pr-5 text-[0.9625rem] leading-[1.75] text-foreground/90 [&_p]:mx-0 [&_p]:mb-0 [&_p]:max-w-none [&_p]:leading-[1.75]">
         {children}
       </blockquote>
     ),
     hr: () => (
-      <div className="my-10 flex items-center gap-4">
+      <div className="mx-auto my-10 flex max-w-[var(--container-prose)] items-center gap-4">
         <div className="h-px flex-1 bg-border" />
         <span className="font-mono text-xs text-muted-foreground">§</span>
         <div className="h-px flex-1 bg-border" />
       </div>
     ),
     table: ({ children }: { children: React.ReactNode }) => (
-      <div className="mb-6 overflow-x-auto rounded-xl border border-border">
+      <div className="mx-auto mb-6 max-w-[var(--container-wide)] overflow-x-auto rounded-xl border border-border">
         <table className="w-full text-sm">{children}</table>
       </div>
     ),
@@ -413,8 +419,15 @@ const PostPage = () => {
       const filename = src?.split("/").pop() ?? "";
       const resolved = src ? allImages[src] ?? allImages[filename] ?? src : "";
       return (
-        <figure className="my-8">
-          <img src={resolved} alt={alt ?? ""} className="w-full rounded-xl border border-border" />
+        <figure className="mx-auto my-8 max-w-[var(--container-wide)]">
+          <button
+            type="button"
+            onClick={() => setLightbox({ src: resolved, alt: alt ?? "" })}
+            aria-label="Phóng to ảnh"
+            className="block w-full cursor-zoom-in overflow-hidden rounded-xl border border-border transition-smooth hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          >
+            <img src={resolved} alt={alt ?? ""} className="w-full" />
+          </button>
           {alt && <figcaption className="mt-2 text-center text-sm text-muted-foreground italic">{alt}</figcaption>}
         </figure>
       );
@@ -432,51 +445,58 @@ const PostPage = () => {
       <ReadingProgress />
       <Header />
 
-      <main className="container py-14">
-        <div className="mx-auto flex max-w-5xl gap-14">
-
-          {/* Main content */}
-          <div className="min-w-0 flex-1 max-w-[680px]">
-
+      {/*
+        Layout 3 cột cân giữa giống devops-blog2:
+        [lề trái 1fr | nội dung wide | lề phải 1fr]. Cột giữa luôn ở chính giữa.
+        Trong cột giữa: văn xuôi hẹp (container-prose), code/ảnh/bảng tràn rộng full cột.
+        ToC nằm lề phải bằng sticky, không đẩy cột giữa lệch.
+      */}
+      <main className="px-4 py-14 sm:px-6">
+        <div className="mx-auto grid max-w-[100rem] grid-cols-1 lg:grid-cols-[1fr_minmax(0,var(--container-wide))_1fr]">
+          {/* Cột giữa: toàn bộ nội dung */}
+          <div className="min-w-0 lg:col-start-2">
             <Link
               to="/"
-              className="mb-8 inline-flex items-center gap-2 font-mono text-xs text-muted-foreground transition-colors hover:text-primary"
+              className="mx-auto mb-8 flex max-w-[var(--container-prose)] items-center gap-2 font-mono text-xs text-muted-foreground transition-colors hover:text-primary"
             >
-              <ArrowLeft className="h-3 w-3" /> All posts
+              <ArrowLeft className="h-3 w-3" /> Tất cả bài viết
             </Link>
 
-            {/* Hero: cover image with title/meta overlaid */}
-            <div className="relative aspect-[2/1] overflow-hidden rounded-2xl">
-              <img
-                src={post.image}
-                alt={post.title}
-                className="h-full w-full object-cover"
-              />
-              {/* gradient overlay */}
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
-              {/* text on top of image */}
-              <div className="absolute bottom-0 left-0 right-0 p-6 md:p-8">
-                <div className="mb-2 font-mono text-[10px] uppercase tracking-[0.2em] text-white/70">
-                  {post.category}
-                </div>
-                <h1 className="font-display text-[1.6rem] font-bold leading-[1.2] text-white md:text-[2.1rem]">
-                  {post.title}
-                </h1>
-                <div className="mt-3 flex items-center gap-3 font-mono text-xs text-white/55">
-                  <span>{post.date}</span>
-                  <span aria-hidden>·</span>
-                  <span>{post.readTime}</span>
-                </div>
+            {/* Header: category + title + meta (cột hẹp) */}
+            <div className="mx-auto max-w-[var(--container-prose)]">
+              <span className="font-mono text-[11px] uppercase tracking-[0.2em] text-primary">
+                {post.category}
+              </span>
+              <h1 className="mt-3 font-display text-3xl font-bold leading-tight text-foreground md:text-4xl">
+                {post.title}
+              </h1>
+              <p className="mt-4 text-lg text-muted-foreground">{post.excerpt}</p>
+              <div className="mt-4 flex items-center gap-3 font-mono text-xs text-muted-foreground">
+                <span>{post.date}</span>
+                <span aria-hidden>·</span>
+                <span>{post.readTime}</span>
               </div>
             </div>
 
+            {/* Cover */}
+            <button
+              type="button"
+              onClick={() => setLightbox({ src: post.image, alt: post.title })}
+              aria-label="Phóng to ảnh bìa"
+              className="mt-8 block w-full cursor-zoom-in overflow-hidden rounded-2xl border border-border"
+            >
+              <img src={post.image} alt={post.title} className="aspect-[2/1] w-full object-cover" />
+            </button>
+
             {/* Mobile ToC */}
-            <div className="mt-8">
+            <div className="mx-auto mt-8 max-w-[var(--container-prose)]">
               <MobileTableOfContents headings={headings} />
             </div>
 
-            {/* Summary + takeaways */}
-            <PostSummaryCard summary={post.summary} takeaways={post.takeaways} />
+            {/* Vấn đề (đầu bài) */}
+            <div className="mx-auto max-w-[var(--container-prose)]">
+              <ProblemCard problem={post.problem} />
+            </div>
 
             {/* Article body */}
             <article>
@@ -489,7 +509,7 @@ const PostPage = () => {
                   );
                 }
                 return (
-                  <Accordion key={`accordion-${segmentIndex}`} type="multiple" className="mb-8 rounded-xl border border-border">
+                  <Accordion key={`accordion-${segmentIndex}`} type="multiple" className="mx-auto mb-8 max-w-[var(--container-prose)] rounded-xl border border-border">
                     {segment.items.map((item, itemIndex) => (
                       <AccordionItem key={item.title} value={`item-${itemIndex}`} className="px-4 last:border-b-0">
                         <AccordionTrigger className="py-4 text-left font-display text-base font-semibold hover:no-underline">
@@ -505,24 +525,60 @@ const PostPage = () => {
               })}
             </article>
 
-            <div className="mt-14 border-t border-border pt-10">
+            {/* Bài học rút ra (cuối bài) */}
+            <div className="mx-auto max-w-[var(--container-prose)]">
+              <TakeawaysCard takeaways={post.takeaways} />
+            </div>
+
+            <div className="mx-auto mt-14 max-w-[var(--container-prose)] border-t border-border pt-10">
               <Link
                 to="/"
                 className="inline-flex items-center gap-2 font-mono text-xs text-muted-foreground transition-colors hover:text-primary"
               >
-                <ArrowLeft className="h-3 w-3" /> Back to all posts
+                <ArrowLeft className="h-3 w-3" /> Quay lại tất cả bài viết
               </Link>
             </div>
-
           </div>
 
-          {/* Desktop ToC sidebar */}
-          <TableOfContents headings={headings} />
-
+          {/* Lề phải: ToC sticky */}
+          <aside className="hidden lg:col-start-3 lg:block">
+            <div className="sticky top-24 pl-8">
+              <TableOfContents headings={headings} />
+            </div>
+          </aside>
         </div>
       </main>
 
       <Footer />
+
+      {/* Lightbox: bấm ảnh để phóng to, bấm nền hoặc Escape để đóng */}
+      {lightbox && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={lightbox.alt || "Ảnh phóng to"}
+          onClick={() => setLightbox(null)}
+          className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-black/85 p-4 backdrop-blur-sm md:p-10"
+        >
+          <button
+            type="button"
+            onClick={() => setLightbox(null)}
+            aria-label="Đóng"
+            className="absolute right-4 top-4 rounded-full bg-white/10 p-2 text-white transition-colors hover:bg-white/20"
+          >
+            <X className="h-5 w-5" />
+          </button>
+          <img
+            src={lightbox.src}
+            alt={lightbox.alt}
+            onClick={(e) => e.stopPropagation()}
+            className="max-h-[85vh] max-w-full cursor-zoom-out rounded-lg object-contain shadow-2xl"
+          />
+          {lightbox.alt && (
+            <p className="mt-4 max-w-2xl text-center text-sm text-white/70">{lightbox.alt}</p>
+          )}
+        </div>
+      )}
     </div>
   );
 };

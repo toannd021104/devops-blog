@@ -5,9 +5,24 @@ const Footer = () => {
         <p className="font-display text-base text-foreground">Toan Nguyen<span className="text-primary">.</span>devops</p>
         <p className="font-mono text-xs">© {new Date().getFullYear()} — built with too much coffee.</p>
         <div className="flex gap-6 font-mono text-xs">
-          <a href="https://github.com/toannd021104" className="transition-smooth hover:text-primary">github</a>
-          <a href="#" className="transition-smooth hover:text-primary">rss</a>
-          <a href="#" className="transition-smooth hover:text-primary">linkedin</a>
+          <a
+            href="https://github.com/toannd021104"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="GitHub (mở tab mới)"
+            className="transition-smooth hover:text-primary"
+          >
+            github
+          </a>
+          <a
+            href="https://www.linkedin.com/in/toanndcloud/"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="LinkedIn (mở tab mới)"
+            className="transition-smooth hover:text-primary"
+          >
+            linkedin
+          </a>
         </div>
       </div>
     </footer>

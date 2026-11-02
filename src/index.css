@@ -36,6 +36,10 @@
 
     --radius: 0.5rem;
 
+    /* Layout bài viết giống devops-blog2: cột chữ hẹp, code/ảnh tràn rộng */
+    --container-prose: 46rem;
+    --container-wide: 58rem;
+
     --gradient-hero:
       radial-gradient(ellipse at top left, hsl(180 70% 35% / 0.08), transparent 50%),
       radial-gradient(ellipse at bottom right, hsl(260 60% 60% / 0.05), transparent 50%),

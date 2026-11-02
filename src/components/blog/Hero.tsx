@@ -18,25 +18,27 @@ const Hero = () => {
             />
           </div>
           <p className="font-mono text-xs uppercase tracking-[0.2em] text-primary">
-            Hi, I'm Toan Nguyen 👋
+            Xin chào, mình là Toan Nguyen
           </p>
-          <h1 className="mt-4 font-display text-4xl font-bold leading-[1.1] text-foreground md:text-6xl">
-            Hands-on DevOps —{" "}
-            <span className="text-primary">học qua thực hành</span>.
+          <h1 className="mt-4 flex flex-col items-center text-center font-display text-4xl font-bold leading-[1.1] text-foreground md:text-6xl">
+            <span className="block">DevOps thực chiến</span>
+            <span className="mt-1 block whitespace-nowrap text-primary">
+              Build&nbsp;-&nbsp;Break&nbsp;-&nbsp;Troubleshoot
+            </span>
           </h1>
           <p className="mx-auto mt-6 max-w-xl text-lg leading-relaxed text-muted-foreground">
-            DevOps Engineer. Tôi viết về Kubernetes, Docker, Terraform, CI/CD và bảo mật
-            hệ thống — từ lý thuyết đến production thực tế.
+            DevOps Engineer. Mình viết về Kubernetes, Docker, Terraform, CI/CD và bảo mật
+            hệ thống - từ lý thuyết đến production thực tế.
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <Button size="lg" className="group" asChild>
               <a href="#writing">
-                Read the latest
+                Đọc bài viết mới nhất
                 <ArrowRight className="ml-1 h-4 w-4 transition-smooth group-hover:translate-x-1" />
               </a>
             </Button>
             <Button size="lg" variant="ghost" asChild>
-              <a href="#about">About me</a>
+              <a href="#about">Về mình</a>
             </Button>
           </div>
         </div>

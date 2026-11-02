@@ -31,7 +31,7 @@ takeaways:
 
 # Xây dựng Kiro CLI Agent cho Amazon EKS
 
-![Tổng quan workshop về Kiro CLI Agent và Amazon EKS](image-1.png)
+![Tổng quan workshop về Kiro CLI Agent và Amazon EKS](../../assets/posts/agentic-developer-experience-amazon-eks/image-1.png)
 
 Gần đây mình tham gia một workshop để khám phá cách xây dựng **AI agent cho Amazon EKS** bằng Kiro CLI.
 
@@ -268,7 +268,7 @@ If it's not accessible, please help me troubleshoot and fix the issue.
 Ensure you use the best practices outlined in the troubleshooting guide.
 ```
 
-![Agent kiểm tra EKS và trạng thái application](image-2.png)
+![Agent kiểm tra EKS và trạng thái application](../../assets/posts/agentic-developer-experience-amazon-eks/image-2.png)
 
 Agent bắt đầu kiểm tra Ingress:
 
@@ -294,7 +294,7 @@ Failed build model due to couldn't auto-discover subnets:
 subnets count less than minimal required count: 1 < 2
 ```
 
-![Ingress báo lỗi FailedBuildModel](image-3.png)
+![Ingress báo lỗi FailedBuildModel](../../assets/posts/agentic-developer-experience-amazon-eks/image-3.png)
 
 Đến đây, agent đã có một hướng điều tra cụ thể thay vì chỉ đưa ra một danh sách command.
 

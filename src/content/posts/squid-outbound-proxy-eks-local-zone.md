@@ -8,15 +8,12 @@ date: "May 1, 2026"
 readTime: "8 min read"
 image: "aws-local-zone-squid-proxy.png"
 featured: true
-summary:
-  - "AWS Local Zone đưa compute/storage/service tới gần user hơn để giảm latency"
-  - "Local Zone vẫn có hạn chế network: không có NAT Gateway, nhiều nơi không support NLB"
-  - "Bài lab dùng Squid proxy trên EKS để app nodes private đi internet bằng fixed Elastic IP"
+problem: "AWS Local Zone đưa workload tới gần user để giảm latency, nhưng đánh đổi bằng việc thiếu nhiều dịch vụ của region — đáng chú ý nhất là không có NAT Gateway. Vậy làm sao để app pods trong private subnet vẫn ra được internet bằng một source IP cố định (cho partner whitelist), mà không phơi node ra public và vẫn kiểm soát được domain nào được phép gọi ra?"
 takeaways:
-  - "App nodes nên nằm private subnet, không public IP, không NAT Gateway"
-  - "Proxy nodes nằm public subnet, mỗi node có một Elastic IP riêng"
-  - "App pods đi ra ngoài qua ClusterIP service của Squid bằng HTTP_PROXY / HTTPS_PROXY"
-  - "Squid ACL kiểm soát domain được phép gọi ra internet"
+  - "Dùng Squid forward proxy thay cho NAT instance vì cần kiểm soát outbound ở mức domain (ACL), không chỉ NAT thuần — đánh đổi là phải tự vận hành thêm một lớp proxy."
+  - "Tách app-node (private) và proxy-node (public) bằng taint/toleration để cô lập vai trò: app không bao giờ chạm internet trực tiếp, giảm blast radius nếu app node bị xâm nhập."
+  - "EIP phải cấp đúng network border group của Local Zone — nếu dùng EIP mặc định của parent region, EC2 trong Local Zone sẽ không associate được. Đây là chỗ dễ vấp nhất."
+  - "hostNetwork trên Squid pod là mấu chốt: nhờ đó outbound đi ra bằng EIP của proxy node, cho ra fixed source IP mà partner whitelist được."
 ---
 
 AWS Local Zone là phần mở rộng của một AWS Region, đặt gần một khu vực địa lý cụ thể hơn. Mục tiêu là đưa compute, storage và một số managed services tới gần user hoặc hệ thống on-prem để giảm latency.

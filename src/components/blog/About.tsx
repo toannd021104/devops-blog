@@ -31,15 +31,15 @@ const About = () => {
         {/* Bio */}
         <div>
           <span className="font-mono text-xs uppercase tracking-[0.2em] text-primary">
-            // about
+            // giới thiệu
           </span>
           <h2 className="mt-3 font-display text-3xl font-bold text-foreground md:text-4xl">
             DevOps Engineer. Học bằng cách làm thật.
           </h2>
           <p className="mt-4 max-w-2xl text-muted-foreground">
-            Tôi là Toan Nguyen — DevOps Engineer đam mê xây dựng hệ thống cloud-native. Blog này
+            Tôi là Toan Nguyen - DevOps Engineer đam mê xây dựng hệ thống cloud-native. Blog này
             là nơi tôi chia sẻ hands-on labs về Kubernetes, Terraform, Docker, CI/CD và
-            security — viết cho người Việt học DevOps thực chiến.
+            security.
           </p>
           <div className="mt-6 flex flex-wrap gap-4 font-mono text-sm">
             <a href="https://github.com/toannd021104" target="_blank" rel="noopener noreferrer" className="text-primary transition-smooth hover:underline">
@@ -56,9 +56,9 @@ const About = () => {
 
         {/* Sidebar */}
         <div className="flex flex-col gap-5">
-{/* My Stack */}
+          {/* My Stack */}
           <div className="rounded-xl border border-border bg-background p-5 shadow-card">
-            <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-primary">My Stack</span>
+            <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-primary">Công nghệ mình dùng</span>
             <div className="mt-3 grid grid-cols-2 gap-2">
               {stack.map((tech) => (
                 <div key={tech.name} className="flex items-center gap-2 rounded-lg border border-border px-3 py-2">

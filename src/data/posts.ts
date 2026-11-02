@@ -7,7 +7,10 @@ export type Post = {
   date: string;
   readTime: string;
   image: string;
-  summary: string[];
+  /** "Vấn đề & vì sao" hiển thị đầu bài (string). */
+  problem?: string;
+  /** Giữ lại cho tương thích bài cũ; layout mới không dùng. */
+  summary?: string[];
   takeaways: string[];
   content: string;
 };
@@ -110,7 +113,6 @@ const parseMarkdownFile = (raw: string, filePath: string) => {
     "date",
     "readTime",
     "image",
-    "summary",
     "takeaways",
   ] as const;
 
